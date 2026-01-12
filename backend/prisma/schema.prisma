@@ -1,0 +1,229 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum ContactStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum EmailEventType {
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  BOUNCED
+  COMPLAINED
+  UNSUBSCRIBED
+}
+
+model User {
+  id                String     @id @default(uuid())
+  email             String     @unique
+  password          String
+  role              UserRole   @default(USER)
+  companyName       String?
+  senderName        String?
+  senderEmail       String?
+  companyAddress    String?
+  isEmailVerified   Boolean    @default(false)
+  emailVerifyToken  String?
+  resetPasswordToken String?
+  resetPasswordExpires DateTime?
+  isSuspended       Boolean    @default(false)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  contacts          Contact[]
+  tags              Tag[]
+  campaigns         Campaign[]
+  emailTemplates    EmailTemplate[]
+
+  @@map("users")
+}
+
+model Contact {
+  id          String        @id @default(uuid())
+  email       String
+  firstName   String?
+  lastName    String?
+  status      ContactStatus @default(SUBSCRIBED)
+  userId      String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags        ContactTag[]
+  recipients  CampaignRecipient[]
+
+  @@unique([email, userId])
+  @@index([userId])
+  @@index([status])
+  @@map("contacts")
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contacts  ContactTag[]
+  campaigns CampaignTag[]
+
+  @@unique([name, userId])
+  @@index([userId])
+  @@map("tags")
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([tagId])
+  @@map("contact_tags")
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  htmlContent String   @db.Text
+  thumbnail   String?  // URL to template preview image
+  isDefault   Boolean  @default(false)
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns   Campaign[]
+
+  @@index([userId])
+  @@map("email_templates")
+}
+
+model Campaign {
+  id            String         @id @default(uuid())
+  name          String
+  subject       String
+  senderName    String
+  senderEmail   String
+  emailContent  Json           // Block-based editor content
+  templateId    String?        // Reference to email template
+  status        CampaignStatus @default(DRAFT)
+  scheduledAt   DateTime?
+  sentAt        DateTime?
+  userId        String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template      EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  tags          CampaignTag[]
+  recipients    CampaignRecipient[]
+  events        EmailEvent[]
+  logs          CampaignLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([templateId])
+  @@map("campaigns")
+}
+
+model CampaignTag {
+  campaignId String
+  tagId      String
+  createdAt  DateTime @default(now())
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, tagId])
+  @@index([tagId])
+  @@map("campaign_tags")
+}
+
+model CampaignRecipient {
+  id         String   @id @default(uuid())
+  campaignId String
+  contactId  String
+  email      String
+  sentAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId])
+  @@index([email])
+  @@map("campaign_recipients")
+}
+
+model EmailEvent {
+  id         String         @id @default(uuid())
+  campaignId String
+  recipientEmail String
+  eventType  EmailEventType
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+
+  campaign   Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([recipientEmail])
+  @@index([eventType])
+  @@map("email_events")
+}
+
+model SuppressionList {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@map("suppression_list")
+}
+
+model CampaignLog {
+  id         String   @id @default(uuid())
+  campaignId String
+  level      String   // INFO, WARN, ERROR
+  message    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([level])
+  @@map("campaign_logs")
+}
