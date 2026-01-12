@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { Plus, Upload, Search, Trash2, Edit, Tag as TagIcon } from 'lucide-react';
+import { Plus, Upload, Search, Trash2, Edit } from 'lucide-react';
 import Papa from 'papaparse';
 
 export const ContactsPage: React.FC = () => {
@@ -312,7 +312,7 @@ const EditContactModal: React.FC<any> = ({ contact, tags, onClose, onSuccess }) 
 
       // Update tags if changed
       const currentTagIds = contact.tags.map((ct: any) => ct.tag.id);
-      const addedTags = formData.tagIds.filter((id) => !currentTagIds.includes(id));
+      const addedTags = formData.tagIds.filter((id: string) => !currentTagIds.includes(id));
       const removedTags = currentTagIds.filter((id: string) => !formData.tagIds.includes(id));
 
       if (addedTags.length > 0) {
@@ -398,7 +398,7 @@ const EditContactModal: React.FC<any> = ({ contact, tags, onClose, onSuccess }) 
                       } else {
                         setFormData({
                           ...formData,
-                          tagIds: formData.tagIds.filter((id) => id !== tag.id),
+                          tagIds: formData.tagIds.filter((id: string) => id !== tag.id),
                         });
                       }
                     }}
@@ -500,7 +500,7 @@ const AddContactModal: React.FC<any> = ({ tags, onClose, onSuccess }) => {
                       } else {
                         setFormData({
                           ...formData,
-                          tagIds: formData.tagIds.filter((id) => id !== tag.id),
+                          tagIds: formData.tagIds.filter((id: string) => id !== tag.id),
                         });
                       }
                     }}

@@ -3,7 +3,13 @@ import { Layout } from '@/components/Layout';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { Plus, Trash2, Send, TestTube } from 'lucide-react';
+import { Trash2, TestTube } from 'lucide-react';
+
+type BlockData = {
+  text?: string;
+  url?: string;
+  alt?: string;
+};
 
 export const CampaignBuilderPage: React.FC = () => {
   const { id } = useParams();
@@ -20,8 +26,8 @@ export const CampaignBuilderPage: React.FC = () => {
     tagIds: [] as string[],
     emailContent: {
       blocks: [
-        { type: 'heading', data: { text: 'Welcome!' } },
-        { type: 'text', data: { text: 'Your email content here...' } },
+        { type: 'heading', data: { text: 'Welcome!' } as BlockData },
+        { type: 'text', data: { text: 'Your email content here...' } as BlockData },
       ],
     },
   });

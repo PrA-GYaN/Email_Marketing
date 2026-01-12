@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/contexts/AuthContext';
-import toast from 'react-hot-toast';
 
 export const SettingsPage: React.FC = () => {
   const { user, updateProfile } = useAuth();
