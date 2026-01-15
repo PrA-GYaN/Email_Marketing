@@ -20,6 +20,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AdminPage } from './pages/AdminPage';
 import EmailTemplatesPage from './pages/EmailTemplatesPage';
 import TemplateEditorPage from './pages/TemplateEditorPage';
+import MediaLibraryPage from './pages/MediaLibraryPage';
+import HelpPage from './pages/HelpPage';
 
 function App() {
   return (
@@ -128,6 +130,24 @@ function App() {
             element={
               <ProtectedRoute>
                 <TemplateEditorPage />
+              </ProtectedRoute>
+            }
+          />
+          
+          <Route
+            path="/media"
+            element={
+              <ProtectedRoute>
+                <MediaLibraryPage />
+              </ProtectedRoute>
+            }
+          />
+          
+          <Route
+            path="/help"
+            element={
+              <ProtectedRoute>
+                <HelpPage />
               </ProtectedRoute>
             }
           />

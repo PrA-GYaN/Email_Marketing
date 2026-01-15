@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BullModule } from '@nestjs/bull';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -13,6 +15,7 @@ import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { UnsubscribeModule } from './unsubscribe/unsubscribe.module';
 import { TemplatesModule } from './templates/templates.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -27,6 +30,10 @@ import { TemplatesModule } from './templates/templates.module';
         password: process.env.REDIS_PASSWORD || undefined,
       },
     }),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -38,6 +45,7 @@ import { TemplatesModule } from './templates/templates.module';
     AnalyticsModule,
     UnsubscribeModule,
     TemplatesModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

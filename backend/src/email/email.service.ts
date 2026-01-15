@@ -79,11 +79,11 @@ export class EmailService {
       email: string;
     },
   ) {
-    const frontendUrl = this.configService.get('FRONTEND_URL');
+    const backendUrl = this.configService.get('BACKEND_URL') || 'http://localhost:3001';
     
     // Add tracking pixel for open tracking
     const trackingPixel = trackingData ? 
-      `<img src="${frontendUrl}/api/analytics/open?cid=${trackingData.campaignId}&rid=${trackingData.recipientId}" width="1" height="1" style="display:none;" alt="" />` : '';
+      `<img src="${backendUrl}/api/analytics/open?cid=${trackingData.campaignId}&rid=${trackingData.recipientId}" width="1" height="1" style="display:none;" alt="" />` : '';
 
     // Personalize content with contact data
     let personalizedHtml = html;
@@ -135,7 +135,8 @@ export class EmailService {
     });
   }
 
-  private personalizeContent(content: string, contactData: { firstName?: string; lastName?: string; email: string }): string {
+  // Public method for preview functionality
+  personalizeContent(content: string, contactData: { firstName?: string; lastName?: string; email: string }): string {
     let personalized = content;
 
     // Replace merge tags with contact data
@@ -158,7 +159,7 @@ export class EmailService {
   }
 
   private addClickTracking(html: string, trackingData: any, excludeUrl?: string): string {
-    const frontendUrl = this.configService.get('FRONTEND_URL');
+    const backendUrl = this.configService.get('BACKEND_URL') || 'http://localhost:3001';
     
     // Simple regex to find and replace links
     // This is basic - a production system would use a proper HTML parser
@@ -170,7 +171,7 @@ export class EmailService {
           return match;
         }
         
-        const trackingUrl = `${frontendUrl}/api/analytics/click?cid=${trackingData.campaignId}&rid=${trackingData.recipientId}&url=${encodeURIComponent(url)}`;
+        const trackingUrl = `${backendUrl}/api/analytics/click?cid=${trackingData.campaignId}&rid=${trackingData.recipientId}&url=${encodeURIComponent(url)}`;
         return `href="${trackingUrl}"`;
       }
     );

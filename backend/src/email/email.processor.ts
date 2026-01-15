@@ -63,12 +63,23 @@ export class EmailProcessor {
         data: { sentAt: new Date() },
       });
 
-      // Log event
+      // Log SENT event
       await this.prisma.emailEvent.create({
         data: {
           campaignId,
           recipientEmail: email,
           eventType: 'SENT',
+          metadata: { messageId: result.messageId },
+        },
+      });
+
+      // Also log DELIVERED event (assuming successful send means delivered)
+      // In production, you'd want webhook integration with your email provider
+      await this.prisma.emailEvent.create({
+        data: {
+          campaignId,
+          recipientEmail: email,
+          eventType: 'DELIVERED',
           metadata: { messageId: result.messageId },
         },
       });

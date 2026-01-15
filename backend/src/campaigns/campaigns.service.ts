@@ -35,13 +35,15 @@ export class CampaignsService {
     }
 
     // Verify template if provided
-    if (dto.templateId) {
+    let templateId: string | null = null;
+    if (dto.templateId && dto.templateId.trim() !== '') {
       const template = await this.prisma.emailTemplate.findFirst({
         where: { id: dto.templateId, userId },
       });
       if (!template) {
         throw new BadRequestException('Invalid template ID');
       }
+      templateId = dto.templateId;
     }
 
     // Create campaign
@@ -52,7 +54,7 @@ export class CampaignsService {
         senderName: dto.senderName,
         senderEmail: dto.senderEmail,
         emailContent: dto.emailContent,
-        templateId: dto.templateId,
+        templateId: templateId,
         status: CampaignStatus.DRAFT,
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
         userId,
@@ -146,6 +148,22 @@ export class CampaignsService {
       throw new BadRequestException('Only draft campaigns can be edited');
     }
 
+    // Verify template if provided
+    let templateId: string | null | undefined = undefined;
+    if (dto.templateId !== undefined) {
+      if (dto.templateId && dto.templateId.trim() !== '') {
+        const template = await this.prisma.emailTemplate.findFirst({
+          where: { id: dto.templateId, userId },
+        });
+        if (!template) {
+          throw new BadRequestException('Invalid template ID');
+        }
+        templateId = dto.templateId;
+      } else {
+        templateId = null;
+      }
+    }
+
     // Update tags if provided
     if (dto.tagIds) {
       await this.prisma.campaignTag.deleteMany({
@@ -180,6 +198,7 @@ export class CampaignsService {
         senderName: dto.senderName,
         senderEmail: dto.senderEmail,
         emailContent: dto.emailContent,
+        templateId: templateId,
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
       },
       include: {
@@ -419,13 +438,16 @@ export class CampaignsService {
     }
 
     // New format with header, body, footer
+    const port = this.configService.get('PORT') || 3000;
+    const baseUrl = `http://localhost:${port}`;
     let html = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">';
 
     // Header section
     if (content.header) {
       html += '<div style="padding: 20px; background-color: #f9fafb; border-bottom: 2px solid #e5e7eb;">';
       if (content.header.logo) {
-        html += `<img src="${content.header.logo}" alt="Logo" style="max-height: 60px; margin-bottom: 10px;" />`;
+        const logoUrl = content.header.logo.startsWith('http') ? content.header.logo : `${baseUrl}${content.header.logo}`;
+        html += `<img src="${logoUrl}" alt="Logo" style="max-height: 60px; margin-bottom: 10px;" />`;
       }
       if (content.header.title) {
         html += `<h1 style="margin: 0; font-size: 24px; color: #1f2937;">${content.header.title}</h1>`;
@@ -519,6 +541,8 @@ export class CampaignsService {
 
   private renderBlocks(blocks: any[]): string {
     let html = '';
+    const port = this.configService.get('PORT') || 3000;
+    const baseUrl = `http://localhost:${port}`;
 
     for (const block of blocks) {
       switch (block.type) {
@@ -532,7 +556,9 @@ export class CampaignsService {
           html += `<h${level} style="margin: 24px 0 16px; color: #1f2937; font-size: ${size};">${block.data.text}</h${level}>`;
           break;
         case 'image':
-          html += `<div style="margin: 20px 0;"><img src="${block.data.url}" alt="${block.data.alt || ''}" style="max-width: 100%; height: auto; border-radius: 8px;" /></div>`;
+          const imageUrl = block.data.url || '';
+          const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : `${baseUrl}${imageUrl}`;
+          html += `<div style="margin: 20px 0;"><img src="${fullImageUrl}" alt="${block.data.alt || ''}" style="max-width: 100%; height: auto; border-radius: 8px;" /></div>`;
           break;
         case 'button':
           const bgColor = block.data.backgroundColor || '#4F46E5';
@@ -666,5 +692,279 @@ export class CampaignsService {
         content: 'Dear {Name}, welcome to our newsletter...'
       }
     };
+  }
+
+  async previewCampaign(userId: string, id: string) {
+    const campaign = await this.findOne(userId, id);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    // Get a sample contact for personalization
+    const sampleContact = await this.prisma.contact.findFirst({
+      where: { 
+        userId,
+        status: 'SUBSCRIBED',
+      },
+    });
+
+    // Build HTML from emailContent JSON structure
+    const html = this.buildEmailHtml(campaign.emailContent, user);
+
+    // Personalize with sample data
+    const contactData = sampleContact ? {
+      firstName: sampleContact.firstName || 'John',
+      lastName: sampleContact.lastName || 'Doe',
+      email: sampleContact.email,
+    } : {
+      firstName: 'John',
+      lastName: 'Doe',
+      email: 'john.doe@example.com',
+    };
+
+    const personalizedHtml = this.emailService.personalizeContent(html, contactData);
+    const personalizedSubject = this.emailService.personalizeContent(campaign.subject, contactData);
+
+    return {
+      subject: personalizedSubject,
+      html: personalizedHtml,
+      sampleData: contactData,
+    };
+  }
+
+  private buildEmailHtml(emailContent: any, user: any): string {
+    const port = this.configService.get('PORT') || 3000;
+    const baseUrl = `http://localhost:${port}`;
+    const content = typeof emailContent === 'string' ? JSON.parse(emailContent) : emailContent;
+    
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6; }
+          .email-container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+          .email-header { padding: 30px; background-color: #4F46E5; color: #ffffff; }
+          .email-header h1 { margin: 0; font-size: 24px; }
+          .email-header nav { margin-top: 15px; }
+          .email-header nav a { color: #ffffff; text-decoration: none; margin-right: 20px; }
+          .email-body { padding: 30px; }
+          .email-footer { padding: 20px 30px; background-color: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; }
+          .social-links a { display: inline-block; margin-right: 15px; color: #4F46E5; text-decoration: none; }
+          .block { margin-bottom: 20px; }
+          .block img { max-width: 100%; height: auto; display: block; }
+          .block h1 { font-size: 32px; margin: 0; }
+          .block h2 { font-size: 24px; margin: 0; }
+          .block h3 { font-size: 20px; margin: 0; }
+          .block-button { display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: #ffffff !important; text-decoration: none; border-radius: 6px; }
+          .block-divider { border: 0; border-top: 2px solid #e5e7eb; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="email-container">
+    `;
+
+    // Header
+    if (content.header) {
+      html += '<div class="email-header">';
+      if (content.header.logo) {
+        html += `<img src="${content.header.logo}" alt="Logo" style="max-height: 50px; margin-bottom: 15px;">`;
+      }
+      if (content.header.title) {
+        html += `<h1>${content.header.title}</h1>`;
+      }
+      if (content.header.navigation && content.header.navigation.length > 0) {
+        html += '<nav>';
+        content.header.navigation.forEach(link => {
+          html += `<a href="${link.url}">${link.text}</a>`;
+        });
+        html += '</nav>';
+      }
+      html += '</div>';
+    }
+
+    // Body blocks
+    html += '<div class="email-body">';
+    if (content.body && content.body.blocks) {
+      content.body.blocks.forEach(block => {
+        html += '<div class="block">';
+        switch (block.type) {
+          case 'heading':
+            const level = block.data.level || 2;
+            html += `<h${level}>${block.data.text || ''}</h${level}>`;
+            break;
+          case 'text':
+            html += `<p>${block.data.text || ''}</p>`;
+            break;
+          case 'image':
+            const imageUrl = block.data.url || '';
+            const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : `${baseUrl}${imageUrl}`;
+            html += `<img src="${fullImageUrl}" alt="${block.data.alt || ''}" style="max-width: 100%; height: auto; border-radius: 8px;">`;
+            break;
+          case 'button':
+            const bgColor = block.data.backgroundColor || '#4F46E5';
+            const textColor = block.data.textColor || '#ffffff';
+            html += `<a href="${block.data.url || '#'}" class="block-button" style="background-color: ${bgColor}; color: ${textColor} !important;">${block.data.text || 'Click here'}</a>`;
+            break;
+          case 'divider':
+            html += '<hr class="block-divider">';
+            break;
+          case 'spacer':
+            const height = block.data.height || 20;
+            html += `<div style="height: ${height}px;"></div>`;
+            break;
+          case 'link':
+            html += `<p><a href="${block.data.url || '#'}" style="color: #4F46E5; text-decoration: underline;">${block.data.text || 'Link'}</a></p>`;
+            break;
+          case 'file':
+            html += `<p>📎 <a href="${block.data.url || '#'}" style="color: #4F46E5;">${block.data.name || 'Download file'}</a></p>`;
+            break;
+          case 'customHtml':
+            html += block.data.html || '';
+            break;
+        }
+        html += '</div>';
+      });
+    }
+    html += '</div>';
+
+    // Footer
+    html += '<div class="email-footer">';
+    if (content.footer) {
+      if (content.footer.companyInfo) {
+        html += `<p>${content.footer.companyInfo}</p>`;
+      }
+      if (content.footer.socialLinks && content.footer.socialLinks.length > 0) {
+        html += '<div class="social-links">';
+        content.footer.socialLinks.forEach(link => {
+          html += `<a href="${link.url}">${link.platform}</a>`;
+        });
+        html += '</div>';
+      }
+    }
+    
+    // Unsubscribe link
+    html += `
+      <p style="margin-top: 20px;">
+        <a href="{{UNSUBSCRIBE_LINK}}" style="color: #4F46E5;">Unsubscribe</a> from these emails
+      </p>
+      <p>${user.companyAddress || user.companyName || 'ViozonX Email Marketing'}</p>
+    `;
+    html += '</div>';
+
+    html += `
+        </div>
+      </body>
+      </html>
+    `;
+
+    return html;
+  }
+
+  async createDraft(userId: string, name?: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    // Create a minimal draft campaign
+    const campaign = await this.prisma.campaign.create({
+      data: {
+        name: name || `Draft - ${new Date().toLocaleDateString()}`,
+        subject: '',
+        senderName: user.senderName || user.companyName || 'ViozonX',
+        senderEmail: user.senderEmail || user.email,
+        emailContent: { blocks: [] },
+        status: CampaignStatus.DRAFT,
+        userId,
+      },
+      include: {
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
+    });
+
+    return campaign;
+  }
+
+  async autosave(userId: string, id: string, dto: UpdateCampaignDto) {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id, userId },
+    });
+
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    // Allow autosave for drafts and scheduled campaigns
+    if (campaign.status !== CampaignStatus.DRAFT && campaign.status !== CampaignStatus.SCHEDULED) {
+      throw new BadRequestException('Can only autosave draft or scheduled campaigns');
+    }
+
+    // Verify template if provided
+    let templateId: string | null | undefined = undefined;
+    if (dto.templateId !== undefined) {
+      if (dto.templateId && dto.templateId.trim() !== '') {
+        const template = await this.prisma.emailTemplate.findFirst({
+          where: { id: dto.templateId, userId },
+        });
+        if (!template) {
+          throw new BadRequestException('Invalid template ID');
+        }
+        templateId = dto.templateId;
+      } else {
+        templateId = null;
+      }
+    }
+
+    // Update tags if provided
+    if (dto.tagIds) {
+      await this.prisma.campaignTag.deleteMany({
+        where: { campaignId: id },
+      });
+
+      if (dto.tagIds.length > 0) {
+        await this.prisma.campaignTag.createMany({
+          data: dto.tagIds.map((tagId) => ({ campaignId: id, tagId })),
+        });
+
+        // Update recipients
+        await this.prisma.campaignRecipient.deleteMany({
+          where: { campaignId: id },
+        });
+
+        const contacts = await this.tagsService.getContactsByTags(userId, dto.tagIds);
+        if (contacts.length > 0) {
+          await this.prisma.campaignRecipient.createMany({
+            data: contacts.map((contact) => ({
+              campaignId: id,
+              contactId: contact.id,
+              email: contact.email,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+    }
+
+    return this.prisma.campaign.update({
+      where: { id },
+      data: {
+        name: dto.name,
+        subject: dto.subject,
+        senderName: dto.senderName,
+        senderEmail: dto.senderEmail,
+        emailContent: dto.emailContent,
+        templateId: templateId,
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+      },
+      include: {
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
+    });
   }
 }

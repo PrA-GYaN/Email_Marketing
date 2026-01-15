@@ -59,6 +59,8 @@ model User {
   tags              Tag[]
   campaigns         Campaign[]
   emailTemplates    EmailTemplate[]
+  mediaFolders      MediaFolder[]
+  mediaFiles        MediaFile[]
 
   @@map("users")
 }
@@ -226,4 +228,42 @@ model CampaignLog {
   @@index([campaignId])
   @@index([level])
   @@map("campaign_logs")
+}
+
+model MediaFolder {
+  id        String   @id @default(uuid())
+  name      String
+  parentId  String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    MediaFolder? @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  MediaFolder[] @relation("FolderHierarchy")
+  files     MediaFile[]
+
+  @@index([userId])
+  @@index([parentId])
+  @@map("media_folders")
+}
+
+model MediaFile {
+  id        String   @id @default(uuid())
+  name      String
+  filename  String   @unique
+  mimeType  String
+  size      Int
+  url       String
+  folderId  String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder    MediaFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([folderId])
+  @@map("media_files")
 }

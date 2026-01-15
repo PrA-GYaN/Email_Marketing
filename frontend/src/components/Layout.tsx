@@ -11,6 +11,8 @@ import {
   LogOut,
   Shield,
   FileText,
+  FolderOpen,
+  HelpCircle,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -33,7 +35,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/tags', icon: Tag, label: 'Tags' },
     { path: '/campaigns', icon: Mail, label: 'Campaigns' },
     { path: '/templates', icon: FileText, label: 'Templates' },
+    { path: '/media', icon: FolderOpen, label: 'Media Library' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+    { path: '/help', icon: HelpCircle, label: 'Help' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ];
 

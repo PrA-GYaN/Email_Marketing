@@ -1,13 +1,12 @@
 import axios from 'axios';
 
+// Create Axios instance with env variable as baseURL
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL, // must use VITE_ env variable
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-console.log(api);
 
 // Add token to requests
 api.interceptors.request.use((config) => {

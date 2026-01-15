@@ -49,9 +49,24 @@ export class CampaignsController {
     return this.campaignsService.getMergeTags();
   }
 
+  @Post('draft')
+  createDraft(@Request() req, @Body() dto?: { name?: string }) {
+    return this.campaignsService.createDraft(req.user.userId, dto?.name);
+  }
+
   @Patch(':id')
   update(@Request() req, @Param('id') id: string, @Body() dto: UpdateCampaignDto) {
     return this.campaignsService.update(req.user.userId, id, dto);
+  }
+
+  @Patch(':id/autosave')
+  autosave(@Request() req, @Param('id') id: string, @Body() dto: UpdateCampaignDto) {
+    return this.campaignsService.autosave(req.user.userId, id, dto);
+  }
+
+  @Get(':id/preview')
+  previewCampaign(@Request() req, @Param('id') id: string) {
+    return this.campaignsService.previewCampaign(req.user.userId, id);
   }
 
   @Delete(':id')

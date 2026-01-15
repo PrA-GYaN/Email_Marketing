@@ -5,8 +5,20 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { 
   Plus, Trash2, TestTube, Image as ImageIcon, 
-  Type, Link, FileText, Code, Minus
+  Type, Link, FileText, Code, Minus, Eye, X
 } from 'lucide-react';
+import MediaPicker from '@/components/MediaPicker';
+
+// Utility function to build full image URL
+const getImageUrl = (url: string): string => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url; // Already a full URL
+  }
+  // Build full URL using backend base URL
+  const baseUrl = import.meta.env.VITE_FILE_URL || 'http://localhost:3000';
+  return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+};
 
 export const EnhancedCampaignBuilderPage: React.FC = () => {
   const { id } = useParams();
@@ -18,6 +30,10 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'header' | 'body' | 'footer'>('header');
   const [mergeTags, setMergeTags] = useState<any>(null);
   const [showMergeTags, setShowMergeTags] = useState(false);
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
+  const [currentImageBlock, setCurrentImageBlock] = useState<number | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string>('');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -59,6 +75,28 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
       setRecipientCount(0);
     }
   }, [formData.tagIds]);
+
+  // Auto-save functionality
+  useEffect(() => {
+    if (!id) return; // Only autosave for existing campaigns
+
+    const autoSaveTimer = setTimeout(() => {
+      handleAutoSave();
+    }, 3000); // Auto-save after 3 seconds of inactivity
+
+    return () => clearTimeout(autoSaveTimer);
+  }, [formData, id]);
+
+  const handleAutoSave = async () => {
+    if (!id) return;
+    
+    try {
+      await api.patch(`/campaigns/${id}/autosave`, formData);
+      console.log('Campaign auto-saved');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+    }
+  };
 
   const loadTags = async () => {
     try {
@@ -163,6 +201,21 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
       toast.success('Test email sent!');
     } catch (error) {
       toast.error('Failed to send test email');
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!id) {
+      toast.error('Please save the campaign first to preview');
+      return;
+    }
+
+    try {
+      const response = await api.get(`/campaigns/${id}/preview`);
+      setPreviewHtml(response.data.html);
+      setShowPreview(true);
+    } catch (error) {
+      toast.error('Failed to load preview');
     }
   };
 
@@ -305,6 +358,33 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     updateFooter('socialLinks', socialLinks);
   };
 
+  const handleMediaSelect = (file: any) => {
+    if (currentImageBlock !== null) {
+      const blocks = [...formData.emailContent.body.blocks];
+      const block = blocks[currentImageBlock];
+      
+      // Update the block with image data
+      blocks[currentImageBlock] = {
+        ...block,
+        data: {
+          ...(block.data as any),
+          url: file.url,
+          alt: (block.data as any).alt || file.name,
+        } as any,
+      };
+      
+      setFormData({
+        ...formData,
+        emailContent: {
+          ...formData.emailContent,
+          body: { blocks },
+        },
+      });
+      
+      setCurrentImageBlock(null);
+    }
+  };
+
   return (
     <Layout>
       <div className="p-8">
@@ -312,10 +392,16 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
           <h1 className="text-3xl font-bold">{id ? 'Edit Campaign' : 'New Campaign'}</h1>
           <div className="flex space-x-3">
             {id && (
-              <button onClick={handleSendTest} className="btn btn-secondary flex items-center space-x-2">
-                <TestTube className="h-5 w-5" />
-                <span>Send Test</span>
-              </button>
+              <>
+                <button onClick={handlePreview} className="btn btn-secondary flex items-center space-x-2">
+                  <Eye className="h-5 w-5" />
+                  <span>Preview</span>
+                </button>
+                <button onClick={handleSendTest} className="btn btn-secondary flex items-center space-x-2">
+                  <TestTube className="h-5 w-5" />
+                  <span>Send Test</span>
+                </button>
+              </>
             )}
             <button onClick={handleSave} disabled={loading} className="btn btn-primary">
               {loading ? 'Saving...' : 'Save Campaign'}
@@ -588,9 +674,14 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                       <BlockEditor
                         key={index}
                         block={block}
+                        index={index}
                         onUpdate={(data) => updateBlock(index, data)}
                         onDelete={() => deleteBlock(index)}
                         onMove={(direction) => moveBlock(index, direction)}
+                        onOpenMediaPicker={(idx) => {
+                          setCurrentImageBlock(idx);
+                          setShowMediaPicker(true);
+                        }}
                         isFirst={index === 0}
                         isLast={index === formData.emailContent.body.blocks.length - 1}
                       />
@@ -672,6 +763,52 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-bold">Campaign Preview</h2>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-6 bg-gray-50">
+              <div className="bg-white rounded-lg shadow-lg max-w-2xl mx-auto">
+                <div 
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  className="email-preview"
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+              <p className="text-sm text-gray-600">
+                💡 This is how your email will appear to recipients
+              </p>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="btn btn-secondary"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <MediaPicker
+        isOpen={showMediaPicker}
+        onClose={() => {
+          setShowMediaPicker(false);
+          setCurrentImageBlock(null);
+        }}
+        onSelect={handleMediaSelect}
+        acceptedTypes={['image/*']}
+      />
     </Layout>
   );
 };
@@ -679,14 +816,16 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
 // Block Editor Component
 interface BlockEditorProps {
   block: any;
+  index: number;
   onUpdate: (data: any) => void;
   onDelete: () => void;
   onMove: (direction: 'up' | 'down') => void;
+  onOpenMediaPicker: (index: number) => void;
   isFirst: boolean;
   isLast: boolean;
 }
 
-const BlockEditor: React.FC<BlockEditorProps> = ({ block, onUpdate, onDelete, onMove, isFirst, isLast }) => {
+const BlockEditor: React.FC<BlockEditorProps> = ({ block, index, onUpdate, onDelete, onMove, onOpenMediaPicker, isFirst, isLast }) => {
   return (
     <div className="border border-gray-200 rounded-lg p-4 bg-white">
       <div className="flex items-center justify-between mb-3">
@@ -799,24 +938,59 @@ const BlockEditor: React.FC<BlockEditorProps> = ({ block, onUpdate, onDelete, on
       )}
 
       {block.type === 'image' && (
-        <div className="space-y-2">
-          <input
-            type="url"
-            value={block.data.url}
-            onChange={(e) => onUpdate({ url: e.target.value })}
-            className="input"
-            placeholder="Image URL"
-          />
-          <input
-            type="text"
-            value={block.data.alt || ''}
-            onChange={(e) => onUpdate({ alt: e.target.value })}
-            className="input"
-            placeholder="Alt text (for accessibility)"
-          />
-          {block.data.url && (
-            <img src={block.data.url} alt="Preview" className="max-w-full h-auto rounded" />
+        <div className="space-y-3">
+          {block.data.url ? (
+            <div className="relative group">
+              <img 
+                src={getImageUrl(block.data.url)} 
+                alt={block.data.alt || 'Preview'} 
+                className="max-w-full h-auto rounded-lg border-2 border-gray-200 shadow-sm"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://via.placeholder.com/600x300?text=Image+Not+Found';
+                }}
+              />
+              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all rounded-lg flex items-center justify-center">
+                <button
+                  onClick={() => onOpenMediaPicker(index)}
+                  className="opacity-0 group-hover:opacity-100 transition-all bg-white hover:bg-gray-100 text-gray-900 px-6 py-3 rounded-lg shadow-lg font-medium flex items-center gap-2"
+                >
+                  <ImageIcon className="w-5 h-5" />
+                  Change Image
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 truncate" title={getImageUrl(block.data.url)}>
+                📁 {getImageUrl(block.data.url)}
+              </p>
+            </div>
+          ) : (
+            <button
+              onClick={() => onOpenMediaPicker(index)}
+              className="w-full py-12 border-2 border-dashed border-gray-300 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 transition-all group"
+            >
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center group-hover:bg-indigo-200 transition-all">
+                  <ImageIcon className="w-8 h-8 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-gray-900 font-medium">Select Image from Media Library</p>
+                  <p className="text-sm text-gray-500 mt-1">Click to browse your uploaded images</p>
+                </div>
+              </div>
+            </button>
           )}
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Alt Text (for accessibility)
+            </label>
+            <input
+              type="text"
+              value={block.data.alt || ''}
+              onChange={(e) => onUpdate({ alt: e.target.value })}
+              className="input"
+              placeholder="Describe this image for screen readers"
+            />
+          </div>
         </div>
       )}
 
