@@ -24,6 +24,8 @@ export const UnsubscribePage: React.FC = () => {
 
     try {
       const campaignId = searchParams.get('campaignId');
+      // Note: Using axios directly instead of api.ts because this is a public endpoint
+      // that doesn't require authentication and shouldn't redirect to login on errors
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
       
       const params: { email: string; campaignId?: string } = { email: targetEmail };
@@ -40,9 +42,13 @@ export const UnsubscribePage: React.FC = () => {
         setStatus('error');
         setMessage(response.data.message || 'Failed to unsubscribe. Please try again.');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setStatus('error');
-      setMessage(error.response?.data?.message || 'An error occurred. Please try again.');
+      if (axios.isAxiosError(error)) {
+        setMessage(error.response?.data?.message || 'An error occurred. Please try again.');
+      } else {
+        setMessage('An error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
