@@ -22,6 +22,7 @@ import EmailTemplatesPage from './pages/EmailTemplatesPage';
 import TemplateEditorPage from './pages/TemplateEditorPage';
 import MediaLibraryPage from './pages/MediaLibraryPage';
 import HelpPage from './pages/HelpPage';
+import { UnsubscribePage } from './pages/UnsubscribePage';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/unsubscribe" element={<UnsubscribePage />} />
           
           {/* Protected Routes */}
           <Route
