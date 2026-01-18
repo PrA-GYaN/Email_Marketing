@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Mail, CheckCircle, XCircle } from 'lucide-react';
@@ -10,17 +10,7 @@ export const UnsubscribePage: React.FC = () => {
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    // Get email from URL if provided
-    const emailFromUrl = searchParams.get('email');
-    if (emailFromUrl) {
-      setEmail(emailFromUrl);
-      // Auto-submit if email is in URL
-      handleUnsubscribe(emailFromUrl);
-    }
-  }, [searchParams]);
-
-  const handleUnsubscribe = async (emailToUnsubscribe?: string) => {
+  const handleUnsubscribe = useCallback(async (emailToUnsubscribe?: string) => {
     const targetEmail = emailToUnsubscribe || email;
     
     if (!targetEmail) {
@@ -36,7 +26,7 @@ export const UnsubscribePage: React.FC = () => {
       const campaignId = searchParams.get('campaignId');
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
       
-      const params: any = { email: targetEmail };
+      const params: { email: string; campaignId?: string } = { email: targetEmail };
       if (campaignId) {
         params.campaignId = campaignId;
       }
@@ -56,7 +46,17 @@ export const UnsubscribePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [email, searchParams]);
+
+  useEffect(() => {
+    // Get email from URL if provided
+    const emailFromUrl = searchParams.get('email');
+    if (emailFromUrl) {
+      setEmail(emailFromUrl);
+      // Auto-submit if email is in URL
+      handleUnsubscribe(emailFromUrl);
+    }
+  }, [searchParams, handleUnsubscribe]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
