@@ -33,7 +33,8 @@ export const UnsubscribePage: React.FC = () => {
         params.campaignId = campaignId;
       }
 
-      const response = await axios.get(`${apiUrl}/unsubscribe`, { params });
+      // Using POST for unsubscribe as it's a state-changing operation
+      const response = await axios.post(`${apiUrl}/unsubscribe`, null, { params });
 
       if (response.data.success) {
         setStatus('success');
@@ -59,10 +60,10 @@ export const UnsubscribePage: React.FC = () => {
     const emailFromUrl = searchParams.get('email');
     if (emailFromUrl) {
       setEmail(emailFromUrl);
-      // Auto-submit if email is in URL
-      handleUnsubscribe(emailFromUrl);
+      // Note: We pre-fill the email but don't auto-submit for security reasons
+      // Users must click the unsubscribe button to confirm
     }
-  }, [searchParams, handleUnsubscribe]);
+  }, [searchParams]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
