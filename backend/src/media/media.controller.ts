@@ -65,26 +65,62 @@ export class MediaController {
       throw new BadRequestException('No file provided');
     }
 
-    // Validate file size (50MB limit)
-    const maxSize = 50 * 1024 * 1024;
+    // Validate file size (100MB limit for all files)
+    const maxSize = 100 * 1024 * 1024;
     if (file.size > maxSize) {
-      throw new BadRequestException('File size exceeds 50MB limit');
+      throw new BadRequestException('File size exceeds 100MB limit');
     }
 
-    // Validate file type
+    // Expanded file type support - now accepts many more types
     const allowedTypes = [
+      // Images
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/gif',
       'image/webp',
+      'image/svg+xml',
+      'image/bmp',
+      'image/tiff',
+      // Documents
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'text/csv',
+      'text/html',
+      'text/css',
+      'application/json',
+      'application/xml',
+      // Archives
+      'application/zip',
+      'application/x-rar-compressed',
+      'application/x-7z-compressed',
+      'application/gzip',
+      // Audio
+      'audio/mpeg',
+      'audio/wav',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/webm',
+      // Video
+      'video/mp4',
+      'video/mpeg',
+      'video/webm',
+      'video/ogg',
+      'video/quicktime',
+      // Other
+      'application/octet-stream',
     ];
 
     if (!allowedTypes.includes(file.mimetype)) {
-      throw new BadRequestException('File type not allowed');
+      throw new BadRequestException(
+        `File type not allowed: ${file.mimetype}. Please contact support if you need this file type.`
+      );
     }
 
     return this.mediaService.uploadFile(req.user.userId, file, folderId);

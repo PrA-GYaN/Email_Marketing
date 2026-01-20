@@ -30,7 +30,7 @@ export class CreateCampaignDto {
   senderEmail: string;
 
   @IsObject()
-  emailContent: any; // Block-based content
+  emailContent: any; // Supports: 1) HTML string, 2) {header, body, footer} with HTML strings, 3) {blocks: []} old format
 
   @IsOptional()
   @IsString()

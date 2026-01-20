@@ -420,6 +420,11 @@ export class CampaignsService {
       return '<p>Empty email content</p>';
     }
 
+    // If content is already HTML string (from TinyMCE - old single format), process it directly
+    if (typeof content === 'string') {
+      return this.processHtmlContent(content);
+    }
+
     // If a template is specified, use it
     if (templateId) {
       const template = await this.prisma.emailTemplate.findUnique({
@@ -431,18 +436,50 @@ export class CampaignsService {
       }
     }
 
-    // Support both old block-based format and new header/body/footer format
+    // Support both old block-based format and new header/body/footer HTML format
     if (content.blocks) {
-      // Old format - backward compatibility
-      return this.renderBlocks(content.blocks);
+      // Old block format - backward compatibility
+      return this.processHtmlContent(this.renderBlocks(content.blocks));
     }
 
-    // New format with header, body, footer
+    // Check if using new structured HTML format (header, body, footer as HTML strings)
+    if (content.header || content.body || content.footer) {
+      let html = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">';
+
+      // Header section (HTML string from TinyMCE)
+      if (content.header) {
+        html += this.processHtmlContent(content.header);
+      }
+
+      // Body section (HTML string from TinyMCE) 
+      if (content.body) {
+        if (typeof content.body === 'string') {
+          html += '<div style="padding: 20px;">';
+          html += this.processHtmlContent(content.body);
+          html += '</div>';
+        } else if (content.body.blocks) {
+          // Old nested block format
+          html += '<div style="padding: 20px;">';
+          html += this.processHtmlContent(this.renderBlocks(content.body.blocks));
+          html += '</div>';
+        }
+      }
+
+      // Footer section (HTML string from TinyMCE)
+      if (content.footer) {
+        html += this.processHtmlContent(content.footer);
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    // Old nested format with header/body/footer objects
     const port = this.configService.get('PORT') || 3000;
     const baseUrl = `http://localhost:${port}`;
     let html = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">';
 
-    // Header section
+    // Header section (old object format)
     if (content.header) {
       html += '<div style="padding: 20px; background-color: #f9fafb; border-bottom: 2px solid #e5e7eb;">';
       if (content.header.logo) {
@@ -462,14 +499,14 @@ export class CampaignsService {
       html += '</div>';
     }
 
-    // Body section with blocks
+    // Body section with blocks (old format)
     if (content.body && content.body.blocks) {
       html += '<div style="padding: 30px 20px;">';
       html += this.renderBlocks(content.body.blocks);
       html += '</div>';
     }
 
-    // Footer section (mandatory)
+    // Footer section (old object format - mandatory)
     html += '<div style="padding: 20px; background-color: #f9fafb; border-top: 2px solid #e5e7eb; font-size: 12px; color: #6b7280;">';
     
     if (content.footer) {
@@ -493,12 +530,61 @@ export class CampaignsService {
     return html;
   }
 
+  // Process HTML content from TinyMCE editor
+  private processHtmlContent(html: string): string {
+    const backendUrl = this.configService.get('BACKEND_URL') || 'http://localhost:3001';
+    
+    // Convert relative image URLs to absolute URLs
+    // This ensures images display correctly in email clients
+    let processedHtml = html.replace(
+      /<img([^>]*)src="\/uploads\/([^"]+)"/gi,
+      `<img$1src="${backendUrl}/uploads/$2"`
+    );
+    
+    // Also handle any other relative paths
+    processedHtml = processedHtml.replace(
+      /<img([^>]*)src="(?!http|data:)([^"]+)"/gi,
+      `<img$1src="${backendUrl}/$2"`
+    );
+    
+    // Wrap content in a responsive container if not already wrapped
+    if (!processedHtml.includes('max-width')) {
+      processedHtml = `
+        <div style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          ${processedHtml}
+        </div>
+      `;
+    }
+    
+    return processedHtml;
+  }
+
   private applyContentToTemplate(templateHtml: string, content: any): string {
     let html = templateHtml;
 
+    // Handle HTML-based content structure (header, body, footer as HTML strings)
+    if (typeof content.header === 'string' || typeof content.body === 'string' || typeof content.footer === 'string') {
+      // Process user's content from TinyMCE editors
+      const headerHtml = content.header ? this.processHtmlContent(content.header) : '';
+      const bodyHtml = content.body ? this.processHtmlContent(content.body) : '';
+      const footerHtml = content.footer ? this.processHtmlContent(content.footer) : '';
+
+      // Replace template section placeholders with user's HTML content
+      // Templates should only use {{HEADER}}, {{CONTENT}}, and {{FOOTER}} placeholders
+      html = html.replace(/\{\{HEADER\}\}/g, headerHtml);
+      html = html.replace(/\{\{CONTENT\}\}/g, bodyHtml);
+      html = html.replace(/\{\{FOOTER\}\}/g, footerHtml);
+
+      // Note: {{UNSUBSCRIBE_LINK}} is handled by the email service during sending
+
+      return html;
+    }
+
+    // Old format handling below...
+    
     // Replace template placeholders with content
-    // Header replacements
-    if (content.header) {
+    // Header replacements (old object format)
+    if (content.header && typeof content.header === 'object') {
       html = html.replace('{{HEADER_TITLE}}', content.header.title || '');
       html = html.replace('{{LOGO_URL}}', content.header.logo || '');
     }
@@ -514,15 +600,15 @@ export class CampaignsService {
       html = html.replace('{{ANNOUNCEMENT_TITLE}}', content.announcement.title || '');
     }
 
-    // Render content blocks into the template
+    // Render content blocks into the template (old block format)
     const contentHtml = content.body && content.body.blocks 
       ? this.renderBlocks(content.body.blocks)
       : this.renderBlocks(content.blocks || []);
     
     html = html.replace('{{CONTENT}}', contentHtml);
 
-    // Footer replacements
-    if (content.footer) {
+    // Footer replacements (old object format)
+    if (content.footer && typeof content.footer === 'object') {
       html = html.replace('{{COMPANY_INFO}}', content.footer.companyInfo || '');
       
       if (content.footer.socialLinks && content.footer.socialLinks.length > 0) {
@@ -706,8 +792,8 @@ export class CampaignsService {
       },
     });
 
-    // Build HTML from emailContent JSON structure
-    const html = this.buildEmailHtml(campaign.emailContent, user);
+    // Build HTML from emailContent using the same renderer as sending
+    const html = await this.renderEmailContent(campaign.emailContent, campaign.templateId);
 
     // Personalize with sample data
     const contactData = sampleContact ? {

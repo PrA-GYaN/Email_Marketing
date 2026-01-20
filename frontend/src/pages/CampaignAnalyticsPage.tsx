@@ -4,6 +4,11 @@ import { useParams, Link } from 'react-router-dom';
 import api from '@/lib/api';
 import { ArrowLeft, Mail, Eye, MousePointer, XCircle, UserMinus } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Chart as ChartJS, ArcElement, Tooltip as ChartTooltip, Legend } from 'chart.js';
+import { Pie } from 'react-chartjs-2';
+
+// Register Chart.js components
+ChartJS.register(ArcElement, ChartTooltip, Legend);
 
 export const CampaignAnalyticsPage: React.FC = () => {
   const { id } = useParams();
@@ -52,6 +57,85 @@ export const CampaignAnalyticsPage: React.FC = () => {
     { name: 'Clicked', value: analytics.metrics.clicked },
   ];
 
+  // Pie chart data for engagement overview
+  const engagementPieData = {
+    labels: ['Opened', 'Not Opened'],
+    datasets: [
+      {
+        label: 'Open Rate',
+        data: [
+          analytics.metrics.opened,
+          analytics.metrics.delivered - analytics.metrics.opened,
+        ],
+        backgroundColor: ['#10B981', '#E5E7EB'],
+        borderColor: ['#059669', '#D1D5DB'],
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  // Pie chart data for click-through rate
+  const clickPieData = {
+    labels: ['Clicked', 'Not Clicked'],
+    datasets: [
+      {
+        label: 'Click Rate',
+        data: [
+          analytics.metrics.clicked,
+          analytics.metrics.delivered - analytics.metrics.clicked,
+        ],
+        backgroundColor: ['#8B5CF6', '#E5E7EB'],
+        borderColor: ['#7C3AED', '#D1D5DB'],
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  // Pie chart data for delivery status
+  const deliveryPieData = {
+    labels: ['Delivered', 'Bounced', 'Pending'],
+    datasets: [
+      {
+        label: 'Delivery Status',
+        data: [
+          analytics.metrics.delivered,
+          analytics.metrics.bounced,
+          analytics.metrics.sent - analytics.metrics.delivered - analytics.metrics.bounced,
+        ],
+        backgroundColor: ['#3B82F6', '#EF4444', '#F59E0B'],
+        borderColor: ['#2563EB', '#DC2626', '#D97706'],
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  const pieOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom' as const,
+        labels: {
+          padding: 15,
+          font: {
+            size: 12,
+          },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label: function (context: any) {
+            const label = context.label || '';
+            const value = context.parsed || 0;
+            const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+            const percentage = ((value / total) * 100).toFixed(1);
+            return `${label}: ${value} (${percentage}%)`;
+          },
+        },
+      },
+    },
+  };
+
   return (
     <Layout>
       <div className="p-8">
@@ -99,6 +183,30 @@ export const CampaignAnalyticsPage: React.FC = () => {
             value={analytics.metrics.unsubscribed}
             color="orange"
           />
+        </div>
+
+        {/* Pie Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4 text-center">Email Delivery Status</h3>
+            <div style={{ height: '250px' }}>
+              <Pie data={deliveryPieData} options={pieOptions} />
+            </div>
+          </div>
+
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4 text-center">Open Rate Distribution</h3>
+            <div style={{ height: '250px' }}>
+              <Pie data={engagementPieData} options={pieOptions} />
+            </div>
+          </div>
+
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4 text-center">Click-Through Distribution</h3>
+            <div style={{ height: '250px' }}>
+              <Pie data={clickPieData} options={pieOptions} />
+            </div>
+          </div>
         </div>
 
         <div className="card">

@@ -3,13 +3,8 @@ import { Layout } from '@/components/Layout';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { Trash2, TestTube } from 'lucide-react';
-
-type BlockData = {
-  text?: string;
-  url?: string;
-  alt?: string;
-};
+import { TestTube } from 'lucide-react';
+import { RichTextEditor } from '@/components/RichTextEditor';
 
 export const CampaignBuilderPage: React.FC = () => {
   const { id } = useParams();
@@ -24,12 +19,7 @@ export const CampaignBuilderPage: React.FC = () => {
     senderName: '',
     senderEmail: '',
     tagIds: [] as string[],
-    emailContent: {
-      blocks: [
-        { type: 'heading', data: { text: 'Welcome!' } as BlockData },
-        { type: 'text', data: { text: 'Your email content here...' } as BlockData },
-      ],
-    },
+    emailContent: '<h1>Welcome!</h1><p>Your email content here...</p>',
   });
 
   useEffect(() => {
@@ -58,17 +48,44 @@ export const CampaignBuilderPage: React.FC = () => {
     try {
       const response = await api.get(`/campaigns/${id}`);
       const campaign = response.data;
+      
+      // Handle both old block-based format and new HTML format
+      let emailContent = '<h1>Welcome!</h1><p>Your email content here...</p>';
+      if (typeof campaign.emailContent === 'string') {
+        emailContent = campaign.emailContent;
+      } else if (campaign.emailContent?.blocks) {
+        // Convert old block format to HTML (for backward compatibility)
+        emailContent = convertBlocksToHTML(campaign.emailContent.blocks);
+      }
+      
       setFormData({
         name: campaign.name,
         subject: campaign.subject,
         senderName: campaign.senderName,
         senderEmail: campaign.senderEmail,
         tagIds: campaign.tags.map((t: any) => t.tagId),
-        emailContent: campaign.emailContent,
+        emailContent,
       });
     } catch (error) {
       toast.error('Failed to load campaign');
     }
+  };
+
+  const convertBlocksToHTML = (blocks: any[]) => {
+    return blocks.map((block: any) => {
+      switch (block.type) {
+        case 'heading':
+          return `<h1>${block.data.text}</h1>`;
+        case 'text':
+          return `<p>${block.data.text}</p>`;
+        case 'button':
+          return `<p><a href="${block.data.url}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px;">${block.data.text}</a></p>`;
+        case 'image':
+          return `<p><img src="${block.data.url}" alt="${block.data.alt || ''}" style="max-width: 100%; height: auto;" /></p>`;
+        default:
+          return '';
+      }
+    }).join('');
   };
 
   const calculateRecipients = async () => {
@@ -110,43 +127,6 @@ export const CampaignBuilderPage: React.FC = () => {
     } catch (error) {
       toast.error('Failed to send test email');
     }
-  };
-
-  const addBlock = (type: string) => {
-    const newBlock: any = { type, data: {} };
-    
-    switch (type) {
-      case 'heading':
-        newBlock.data.text = 'Heading';
-        break;
-      case 'text':
-        newBlock.data.text = 'Paragraph text';
-        break;
-      case 'button':
-        newBlock.data = { text: 'Click Here', url: 'https://example.com' };
-        break;
-      case 'image':
-        newBlock.data = { url: 'https://via.placeholder.com/600x300', alt: 'Image' };
-        break;
-    }
-
-    setFormData({
-      ...formData,
-      emailContent: {
-        blocks: [...formData.emailContent.blocks, newBlock],
-      },
-    });
-  };
-
-  const updateBlock = (index: number, data: any) => {
-    const blocks = [...formData.emailContent.blocks];
-    blocks[index].data = { ...blocks[index].data, ...data };
-    setFormData({ ...formData, emailContent: { blocks } });
-  };
-
-  const deleteBlock = (index: number) => {
-    const blocks = formData.emailContent.blocks.filter((_, i) => i !== index);
-    setFormData({ ...formData, emailContent: { blocks } });
   };
 
   return (
@@ -265,95 +245,16 @@ export const CampaignBuilderPage: React.FC = () => {
           {/* Email Builder */}
           <div className="lg:col-span-2">
             <div className="card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">Email Content</h2>
-                <div className="flex space-x-2">
-                  <button onClick={() => addBlock('heading')} className="btn btn-secondary text-sm">
-                    + Heading
-                  </button>
-                  <button onClick={() => addBlock('text')} className="btn btn-secondary text-sm">
-                    + Text
-                  </button>
-                  <button onClick={() => addBlock('button')} className="btn btn-secondary text-sm">
-                    + Button
-                  </button>
-                  <button onClick={() => addBlock('image')} className="btn btn-secondary text-sm">
-                    + Image
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {formData.emailContent.blocks.map((block, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-gray-600">{block.type}</span>
-                      <button
-                        onClick={() => deleteBlock(index)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    {block.type === 'heading' && (
-                      <input
-                        type="text"
-                        value={block.data.text}
-                        onChange={(e) => updateBlock(index, { text: e.target.value })}
-                        className="input text-xl font-bold"
-                      />
-                    )}
-
-                    {block.type === 'text' && (
-                      <textarea
-                        value={block.data.text}
-                        onChange={(e) => updateBlock(index, { text: e.target.value })}
-                        className="input"
-                        rows={3}
-                      />
-                    )}
-
-                    {block.type === 'button' && (
-                      <div className="space-y-2">
-                        <input
-                          type="text"
-                          value={block.data.text}
-                          onChange={(e) => updateBlock(index, { text: e.target.value })}
-                          className="input"
-                          placeholder="Button text"
-                        />
-                        <input
-                          type="url"
-                          value={block.data.url}
-                          onChange={(e) => updateBlock(index, { url: e.target.value })}
-                          className="input"
-                          placeholder="Button URL"
-                        />
-                      </div>
-                    )}
-
-                    {block.type === 'image' && (
-                      <div className="space-y-2">
-                        <input
-                          type="url"
-                          value={block.data.url}
-                          onChange={(e) => updateBlock(index, { url: e.target.value })}
-                          className="input"
-                          placeholder="Image URL"
-                        />
-                        <input
-                          type="text"
-                          value={block.data.alt || ''}
-                          onChange={(e) => updateBlock(index, { alt: e.target.value })}
-                          className="input"
-                          placeholder="Alt text"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <h2 className="text-xl font-bold mb-4">Email Content</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Use the rich text editor to create your email. You can insert merge tags like {'{FirstName}'}, {'{LastName}'}, {'{Email}'}, and {'{{UNSUBSCRIBE_LINK}}'} for personalization.
+              </p>
+              
+              <RichTextEditor
+                value={formData.emailContent}
+                onChange={(content) => setFormData({ ...formData, emailContent: content })}
+                height={600}
+              />
             </div>
           </div>
         </div>

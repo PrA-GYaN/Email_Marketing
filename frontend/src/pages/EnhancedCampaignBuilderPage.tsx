@@ -3,22 +3,8 @@ import { Layout } from '@/components/Layout';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { 
-  Plus, Trash2, TestTube, Image as ImageIcon, 
-  Type, Link, FileText, Code, Minus, Eye, X
-} from 'lucide-react';
-import MediaPicker from '@/components/MediaPicker';
-
-// Utility function to build full image URL
-const getImageUrl = (url: string): string => {
-  if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url; // Already a full URL
-  }
-  // Build full URL using backend base URL
-  const baseUrl = import.meta.env.VITE_FILE_URL || 'http://localhost:3000';
-  return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
-};
+import { TestTube, Eye, X } from 'lucide-react';
+import { RichTextEditor } from '@/components/RichTextEditor';
 
 export const EnhancedCampaignBuilderPage: React.FC = () => {
   const { id } = useParams();
@@ -27,13 +13,10 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
   const [tags, setTags] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [recipientCount, setRecipientCount] = useState(0);
-  const [activeTab, setActiveTab] = useState<'header' | 'body' | 'footer'>('header');
-  const [mergeTags, setMergeTags] = useState<any>(null);
-  const [showMergeTags, setShowMergeTags] = useState(false);
-  const [showMediaPicker, setShowMediaPicker] = useState(false);
-  const [currentImageBlock, setCurrentImageBlock] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'header' | 'body' | 'footer'>('body');
   const [showPreview, setShowPreview] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string>('');
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -43,28 +26,15 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     templateId: '',
     tagIds: [] as string[],
     emailContent: {
-      header: {
-        logo: '',
-        title: '',
-        navigation: [] as Array<{ text: string; url: string }>,
-      },
-      body: {
-        blocks: [
-          { type: 'heading', data: { text: 'Welcome!', level: 1 } },
-          { type: 'text', data: { text: 'Your email content here...' } },
-        ],
-      },
-      footer: {
-        companyInfo: '',
-        socialLinks: [] as Array<{ platform: string; url: string }>,
-      },
+      header: '<div style="text-align: center; padding: 20px; background-color: #f8f9fa;"><h2>Your Company Name</h2></div>',
+      body: '<h1>Welcome!</h1><p>Your email content here...</p>',
+      footer: '<div style="text-align: center; padding: 20px; background-color: #f8f9fa; font-size: 12px;"><p>© 2026 Your Company. All rights reserved.</p><p><a href="{{UNSUBSCRIBE_LINK}}">Unsubscribe</a></p></div>',
     },
   });
 
   useEffect(() => {
     loadTags();
     loadTemplates();
-    loadMergeTags();
     if (id) loadCampaign();
   }, [id]);
 
@@ -76,27 +46,14 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     }
   }, [formData.tagIds]);
 
-  // Auto-save functionality
+  // Load template details when templateId changes
   useEffect(() => {
-    if (!id) return; // Only autosave for existing campaigns
-
-    const autoSaveTimer = setTimeout(() => {
-      handleAutoSave();
-    }, 3000); // Auto-save after 3 seconds of inactivity
-
-    return () => clearTimeout(autoSaveTimer);
-  }, [formData, id]);
-
-  const handleAutoSave = async () => {
-    if (!id) return;
-    
-    try {
-      await api.patch(`/campaigns/${id}/autosave`, formData);
-      console.log('Campaign auto-saved');
-    } catch (error) {
-      console.error('Auto-save failed:', error);
+    if (formData.templateId) {
+      loadTemplateDetails(formData.templateId);
+    } else {
+      setSelectedTemplate(null);
     }
-  };
+  }, [formData.templateId]);
 
   const loadTags = async () => {
     try {
@@ -116,20 +73,50 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     }
   };
 
+  const loadTemplateDetails = async (templateId: string) => {
+    try {
+      const response = await api.get(`/templates/${templateId}`);
+      const template = response.data;
+      setSelectedTemplate(template);
+      
+      // Note: Template should only have {{HEADER}}, {{CONTENT}}, and {{FOOTER}} placeholders
+      // User content from editors will automatically replace these sections
+    } catch (error) {
+      console.error('Failed to load template details:', error);
+    }
+  };
+
+
+
   const loadCampaign = async () => {
     try {
       const response = await api.get(`/campaigns/${id}`);
       const campaign = response.data;
       
-      // Handle both old and new format
-      const emailContent = campaign.emailContent.blocks 
-        ? {
-            header: { logo: '', title: '', navigation: [] },
-            body: { blocks: campaign.emailContent.blocks },
-            footer: { companyInfo: '', socialLinks: [] },
-          }
-        : campaign.emailContent;
+      // Handle both old formats and new structured format
+      let emailContent = {
+        header: '<div style="text-align: center; padding: 20px; background-color: #f8f9fa;"><h2>Your Company Name</h2></div>',
+        body: '<h1>Welcome!</h1><p>Your email content here...</p>',
+        footer: '<div style="text-align: center; padding: 20px; background-color: #f8f9fa; font-size: 12px;"><p>© 2026 Your Company. All rights reserved.</p><p><a href="{{UNSUBSCRIBE_LINK}}">Unsubscribe</a></p></div>',
+      };
 
+      if (campaign.emailContent) {
+        if (typeof campaign.emailContent === 'string') {
+          // Old single HTML string format - put it in body
+          emailContent.body = campaign.emailContent;
+        } else if (campaign.emailContent.header || campaign.emailContent.body || campaign.emailContent.footer) {
+          // New structured format
+          emailContent = {
+            header: campaign.emailContent.header || emailContent.header,
+            body: campaign.emailContent.body || emailContent.body,
+            footer: campaign.emailContent.footer || emailContent.footer,
+          };
+        } else if (campaign.emailContent.blocks) {
+          // Old block format - convert to HTML in body
+          emailContent.body = convertBlocksToHTML(campaign.emailContent.blocks);
+        }
+      }
+      
       setFormData({
         name: campaign.name,
         subject: campaign.subject,
@@ -144,6 +131,23 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     }
   };
 
+  const convertBlocksToHTML = (blocks: any[]) => {
+    return blocks.map((block: any) => {
+      switch (block.type) {
+        case 'heading':
+          return `<h1>${block.data.text}</h1>`;
+        case 'text':
+          return `<p>${block.data.text}</p>`;
+        case 'button':
+          return `<p><a href="${block.data.url}" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px;">${block.data.text}</a></p>`;
+        case 'image':
+          return `<p><img src="${block.data.url}" alt="${block.data.alt || ''}" style="max-width: 100%; height: auto;" /></p>`;
+        default:
+          return '';
+      }
+    }).join('');
+  };
+
   const calculateRecipients = async () => {
     try {
       const response = await api.get('/tags/contacts-by-tags', {
@@ -155,26 +159,7 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     }
   };
 
-  const loadMergeTags = async () => {
-    try {
-      const response = await api.get('/campaigns/merge-tags');
-      setMergeTags(response.data);
-    } catch (error) {
-      console.error('Failed to load merge tags:', error);
-    }
-  };
-
   const handleSave = async () => {
-    if (!formData.name || !formData.subject || !formData.senderName || !formData.senderEmail) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
-    if (formData.tagIds.length === 0) {
-      toast.error('Please select at least one audience tag');
-      return;
-    }
-
     setLoading(true);
     try {
       if (id) {
@@ -219,172 +204,6 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
     }
   };
 
-  // Header functions
-  const updateHeader = (field: string, value: any) => {
-    setFormData({
-      ...formData,
-      emailContent: {
-        ...formData.emailContent,
-        header: { ...formData.emailContent.header, [field]: value },
-      },
-    });
-  };
-
-  const addNavLink = () => {
-    const navigation = [...formData.emailContent.header.navigation, { text: 'Link', url: 'https://' }];
-    updateHeader('navigation', navigation);
-  };
-
-  const updateNavLink = (index: number, field: string, value: string) => {
-    const navigation = [...formData.emailContent.header.navigation];
-    navigation[index] = { ...navigation[index], [field]: value };
-    updateHeader('navigation', navigation);
-  };
-
-  const removeNavLink = (index: number) => {
-    const navigation = formData.emailContent.header.navigation.filter((_, i) => i !== index);
-    updateHeader('navigation', navigation);
-  };
-
-  // Body functions
-  const addBlock = (type: string) => {
-    const newBlock: any = { type, data: {} };
-    
-    switch (type) {
-      case 'heading':
-        newBlock.data = { text: 'Heading', level: 2 };
-        break;
-      case 'text':
-        newBlock.data = { text: 'Paragraph text' };
-        break;
-      case 'richText':
-        newBlock.data = { html: '<p>Rich text content</p>' };
-        break;
-      case 'button':
-        newBlock.data = { text: 'Click Here', url: 'https://example.com', backgroundColor: '#4F46E5', textColor: '#ffffff' };
-        break;
-      case 'image':
-        newBlock.data = { url: 'https://via.placeholder.com/600x300', alt: 'Image' };
-        break;
-      case 'divider':
-        newBlock.data = {};
-        break;
-      case 'spacer':
-        newBlock.data = { height: 20 };
-        break;
-      case 'pdf':
-      case 'file':
-        newBlock.data = { url: '', name: 'Download File' };
-        break;
-      case 'customHtml':
-        newBlock.data = { html: '<div>Custom HTML</div>' };
-        break;
-    }
-
-    setFormData({
-      ...formData,
-      emailContent: {
-        ...formData.emailContent,
-        body: {
-          blocks: [...formData.emailContent.body.blocks, newBlock],
-        },
-      },
-    });
-  };
-
-  const updateBlock = (index: number, data: any) => {
-    const blocks = [...formData.emailContent.body.blocks];
-    blocks[index].data = { ...blocks[index].data, ...data };
-    setFormData({
-      ...formData,
-      emailContent: {
-        ...formData.emailContent,
-        body: { blocks },
-      },
-    });
-  };
-
-  const deleteBlock = (index: number) => {
-    const blocks = formData.emailContent.body.blocks.filter((_, i) => i !== index);
-    setFormData({
-      ...formData,
-      emailContent: {
-        ...formData.emailContent,
-        body: { blocks },
-      },
-    });
-  };
-
-  const moveBlock = (index: number, direction: 'up' | 'down') => {
-    const blocks = [...formData.emailContent.body.blocks];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    if (newIndex < 0 || newIndex >= blocks.length) return;
-    
-    [blocks[index], blocks[newIndex]] = [blocks[newIndex], blocks[index]];
-    setFormData({
-      ...formData,
-      emailContent: {
-        ...formData.emailContent,
-        body: { blocks },
-      },
-    });
-  };
-
-  // Footer functions
-  const updateFooter = (field: string, value: any) => {
-    setFormData({
-      ...formData,
-      emailContent: {
-        ...formData.emailContent,
-        footer: { ...formData.emailContent.footer, [field]: value },
-      },
-    });
-  };
-
-  const addSocialLink = () => {
-    const socialLinks = [...formData.emailContent.footer.socialLinks, { platform: 'Facebook', url: 'https://' }];
-    updateFooter('socialLinks', socialLinks);
-  };
-
-  const updateSocialLink = (index: number, field: string, value: string) => {
-    const socialLinks = [...formData.emailContent.footer.socialLinks];
-    socialLinks[index] = { ...socialLinks[index], [field]: value };
-    updateFooter('socialLinks', socialLinks);
-  };
-
-  const removeSocialLink = (index: number) => {
-    const socialLinks = formData.emailContent.footer.socialLinks.filter((_, i) => i !== index);
-    updateFooter('socialLinks', socialLinks);
-  };
-
-  const handleMediaSelect = (file: any) => {
-    if (currentImageBlock !== null) {
-      const blocks = [...formData.emailContent.body.blocks];
-      const block = blocks[currentImageBlock];
-      
-      // Update the block with image data
-      blocks[currentImageBlock] = {
-        ...block,
-        data: {
-          ...(block.data as any),
-          url: file.url,
-          alt: (block.data as any).alt || file.name,
-        } as any,
-      };
-      
-      setFormData({
-        ...formData,
-        emailContent: {
-          ...formData.emailContent,
-          body: { blocks },
-        },
-      });
-      
-      setCurrentImageBlock(null);
-    }
-  };
-
   return (
     <Layout>
       <div className="p-8">
@@ -410,14 +229,14 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Settings Sidebar */}
+          {/* Settings */}
           <div className="lg:col-span-1 space-y-6">
             <div className="card">
               <h2 className="text-xl font-bold mb-4">Settings</h2>
               
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Campaign Name *</label>
+                  <label className="block text-sm font-medium mb-2">Campaign Name</label>
                   <input
                     type="text"
                     value={formData.name}
@@ -428,7 +247,7 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Subject Line *</label>
+                  <label className="block text-sm font-medium mb-2">Subject Line</label>
                   <input
                     type="text"
                     value={formData.subject}
@@ -439,7 +258,7 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Sender Name *</label>
+                  <label className="block text-sm font-medium mb-2">Sender Name</label>
                   <input
                     type="text"
                     value={formData.senderName}
@@ -450,7 +269,7 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Sender Email *</label>
+                  <label className="block text-sm font-medium mb-2">Sender Email</label>
                   <input
                     type="email"
                     value={formData.senderEmail}
@@ -467,7 +286,7 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, templateId: e.target.value })}
                     className="input"
                   >
-                    <option value="">No Template (Block-based design)</option>
+                    <option value="">No Template (Use custom Header/Body/Footer)</option>
                     {templates.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name} {template.isDefault ? '⭐' : ''}
@@ -475,15 +294,23 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                     ))}
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
-                    Use a template to wrap your content with consistent branding
+                    Templates wrap your content with consistent branding. Leave empty to use custom sections below.
                   </p>
+                  {selectedTemplate && (
+                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                      <p className="text-green-800 font-medium">✓ Template selected: {selectedTemplate.name}</p>
+                      <p className="text-green-700 mt-1">
+                        Placeholders like <code className="bg-green-100 px-1 rounded">{'{{CONTENT}}'}</code> will be shown in the editor sections below.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Audience Tags * (OR logic)
+                    Audience Tags (OR logic)
                   </label>
-                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded p-2">
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
                     {tags.map((tag) => (
                       <label key={tag.id} className="flex items-center space-x-2">
                         <input
@@ -495,13 +322,13 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                             } else {
                               setFormData({
                                 ...formData,
-                                tagIds: formData.tagIds.filter((id) => id !== tag.id),
+                                tagIds: formData.tagIds.filter((tid) => tid !== tag.id),
                               });
                             }
                           }}
                           className="rounded"
                         />
-                        <span className="text-sm">
+                        <span>
                           {tag.name} ({tag.contactCount})
                         </span>
                       </label>
@@ -511,254 +338,141 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
                   {formData.tagIds.length > 0 && (
                     <div className="mt-3 p-3 bg-primary-50 rounded-lg">
                       <p className="text-sm font-medium text-primary-900">
-                        📧 Recipients: {recipientCount} contacts
+                        Recipients: {recipientCount} contacts
+                      </p>
+                      <p className="text-xs text-primary-700 mt-1">
+                        Contacts with ANY of the selected tags (OR logic)
                       </p>
                     </div>
                   )}
                 </div>
               </div>
             </div>
-
-            {/* Merge Tags Helper */}
-            {mergeTags && (
-              <div className="card">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold">Personalization Tags</h2>
-                  <button
-                    onClick={() => setShowMergeTags(!showMergeTags)}
-                    className="text-sm text-primary-600 hover:text-primary-800"
-                  >
-                    {showMergeTags ? 'Hide' : 'Show'} Tags
-                  </button>
-                </div>
-                
-                {showMergeTags && (
-                  <div className="space-y-3">
-                    <p className="text-sm text-gray-600">
-                      Use these tags in your subject line and email content to personalize emails with contact data:
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {Object.entries(mergeTags).map(([key, value]: [string, any]) => (
-                        <div key={key} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                          <code className="text-sm font-mono text-primary-600">{`{${key}}`}</code>
-                          <span className="text-xs text-gray-500">{value.description}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Example: "Hello {'{'}FirstName{'}'}" will become "Hello John" for each contact.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Email Builder */}
           <div className="lg:col-span-2">
+            {selectedTemplate && (
+              <div className="mb-4 p-4 bg-primary-50 border border-primary-200 rounded-lg">
+                <h3 className="text-sm font-semibold text-primary-900 mb-2">📧 Template Active: {selectedTemplate.name}</h3>
+                <p className="text-xs text-primary-700">
+                  Your content from Header, Body, and Footer tabs will automatically be inserted into the template structure.
+                  The template provides the styling and layout, while you provide the content.
+                </p>
+              </div>
+            )}
+            
             <div className="card">
+              <h2 className="text-xl font-bold mb-4">Email Content</h2>
+              
               {/* Tabs */}
-              <div className="border-b border-gray-200 mb-6">
+              <div className="border-b border-gray-200 mb-4">
                 <nav className="flex space-x-8">
-                  {(['header', 'body', 'footer'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`py-2 px-1 border-b-2 font-medium text-sm capitalize ${
-                        activeTab === tab
-                          ? 'border-primary-600 text-primary-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => setActiveTab('header')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'header'
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Header
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('body')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'body'
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Body
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('footer')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      activeTab === 'footer'
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Footer
+                  </button>
                 </nav>
               </div>
 
+              {/* Tab Content - Render all editors but show only active one */}
               {/* Header Tab */}
-              {activeTab === 'header' && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Email Header</h3>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Logo URL</label>
-                    <input
-                      type="url"
-                      value={formData.emailContent.header.logo}
-                      onChange={(e) => updateHeader('logo', e.target.value)}
-                      className="input"
-                      placeholder="https://example.com/logo.png"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Title</label>
-                    <input
-                      type="text"
-                      value={formData.emailContent.header.title}
-                      onChange={(e) => updateHeader('title', e.target.value)}
-                      className="input"
-                      placeholder="Company Name"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium">Navigation Links</label>
-                      <button onClick={addNavLink} className="btn btn-secondary text-sm">
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
-                    
-                    {formData.emailContent.header.navigation.map((nav, index) => (
-                      <div key={index} className="flex space-x-2 mb-2">
-                        <input
-                          type="text"
-                          value={nav.text}
-                          onChange={(e) => updateNavLink(index, 'text', e.target.value)}
-                          className="input flex-1"
-                          placeholder="Link text"
-                        />
-                        <input
-                          type="url"
-                          value={nav.url}
-                          onChange={(e) => updateNavLink(index, 'url', e.target.value)}
-                          className="input flex-1"
-                          placeholder="URL"
-                        />
-                        <button
-                          onClick={() => removeNavLink(index)}
-                          className="text-red-600 hover:text-red-700 p-2"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+              <div style={{ display: activeTab === 'header' ? 'block' : 'none' }}>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Design your email header section. Typically includes your logo, company name, or banner.
+                  </p>
+                  {selectedTemplate && (
+                    <p className="text-xs text-primary-600 font-medium mt-1">
+                      ✓ This content will be inserted into your template's header area
+                    </p>
+                  )}
                 </div>
-              )}
+                
+                <RichTextEditor
+                  key="header-editor"
+                  value={formData.emailContent.header}
+                  onChange={(content) => setFormData({ 
+                    ...formData, 
+                    emailContent: { ...formData.emailContent, header: content }
+                  })}
+                  height={400}
+                />
+              </div>
 
               {/* Body Tab */}
-              {activeTab === 'body' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">Email Body</h3>
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={() => addBlock('heading')} className="btn btn-sm btn-secondary">
-                        <Type className="h-4 w-4" /> Heading
-                      </button>
-                      <button onClick={() => addBlock('text')} className="btn btn-sm btn-secondary">
-                        <FileText className="h-4 w-4" /> Text
-                      </button>
-                      <button onClick={() => addBlock('button')} className="btn btn-sm btn-secondary">
-                        <Link className="h-4 w-4" /> Button
-                      </button>
-                      <button onClick={() => addBlock('image')} className="btn btn-sm btn-secondary">
-                        <ImageIcon className="h-4 w-4" /> Image
-                      </button>
-                      <button onClick={() => addBlock('divider')} className="btn btn-sm btn-secondary">
-                        <Minus className="h-4 w-4" /> Divider
-                      </button>
-                      <button onClick={() => addBlock('file')} className="btn btn-sm btn-secondary">
-                        📎 File/PDF
-                      </button>
-                      <button onClick={() => addBlock('customHtml')} className="btn btn-sm btn-secondary">
-                        <Code className="h-4 w-4" /> HTML
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {formData.emailContent.body.blocks.map((block, index) => (
-                      <BlockEditor
-                        key={index}
-                        block={block}
-                        index={index}
-                        onUpdate={(data) => updateBlock(index, data)}
-                        onDelete={() => deleteBlock(index)}
-                        onMove={(direction) => moveBlock(index, direction)}
-                        onOpenMediaPicker={(idx) => {
-                          setCurrentImageBlock(idx);
-                          setShowMediaPicker(true);
-                        }}
-                        isFirst={index === 0}
-                        isLast={index === formData.emailContent.body.blocks.length - 1}
-                      />
-                    ))}
-
-                    {formData.emailContent.body.blocks.length === 0 && (
-                      <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                        <p className="text-gray-500 mb-4">No content blocks yet</p>
-                        <p className="text-sm text-gray-400">Click the buttons above to add content</p>
-                      </div>
-                    )}
-                  </div>
+              <div style={{ display: activeTab === 'body' ? 'block' : 'none' }}>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Create your main email content. You can use merge tags like {'{FirstName}'}, {'{LastName}'}, {'{Email}'} for personalization.
+                  </p>
+                  {selectedTemplate && (
+                    <p className="text-xs text-primary-600 font-medium mt-1">
+                      ✓ This content will be inserted into your template's main content area
+                    </p>
+                  )}
                 </div>
-              )}
+                
+                <RichTextEditor
+                  key="body-editor"
+                  value={formData.emailContent.body}
+                  onChange={(content) => setFormData({ 
+                    ...formData, 
+                    emailContent: { ...formData.emailContent, body: content }
+                  })}
+                  height={500}
+                />
+              </div>
 
               {/* Footer Tab */}
-              {activeTab === 'footer' && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Email Footer</h3>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Company Information</label>
-                    <textarea
-                      value={formData.emailContent.footer.companyInfo}
-                      onChange={(e) => updateFooter('companyInfo', e.target.value)}
-                      className="input"
-                      rows={3}
-                      placeholder="Your Company Name&#10;123 Main St, City, State 12345&#10;contact@company.com"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium">Social Media Links</label>
-                      <button onClick={addSocialLink} className="btn btn-secondary text-sm">
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
-                    
-                    {formData.emailContent.footer.socialLinks.map((social, index) => (
-                      <div key={index} className="flex space-x-2 mb-2">
-                        <select
-                          value={social.platform}
-                          onChange={(e) => updateSocialLink(index, 'platform', e.target.value)}
-                          className="input w-40"
-                        >
-                          <option>Facebook</option>
-                          <option>Twitter</option>
-                          <option>LinkedIn</option>
-                          <option>Instagram</option>
-                          <option>YouTube</option>
-                        </select>
-                        <input
-                          type="url"
-                          value={social.url}
-                          onChange={(e) => updateSocialLink(index, 'url', e.target.value)}
-                          className="input flex-1"
-                          placeholder="URL"
-                        />
-                        <button
-                          onClick={() => removeSocialLink(index)}
-                          className="text-red-600 hover:text-red-700 p-2"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm font-medium text-yellow-900">✅ Unsubscribe Link</p>
-                    <p className="text-xs text-yellow-700 mt-1">
-                      An unsubscribe link will be automatically added to all campaign emails for compliance.
+              <div style={{ display: activeTab === 'footer' ? 'block' : 'none' }}>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Design your email footer. Include company info, address, and contact details. The unsubscribe link is automatically added.
+                  </p>
+                  {selectedTemplate && (
+                    <p className="text-xs text-primary-600 font-medium mt-1">
+                      ✓ This content will be inserted into your template's footer area
                     </p>
-                  </div>
+                  )}
                 </div>
-              )}
+                
+                <RichTextEditor
+                  key="footer-editor"
+                  value={formData.emailContent.footer}
+                  onChange={(content) => setFormData({ 
+                    ...formData, 
+                    emailContent: { ...formData.emailContent, footer: content }
+                  })}
+                  height={400}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -799,253 +513,6 @@ export const EnhancedCampaignBuilderPage: React.FC = () => {
           </div>
         </div>
       )}
-
-      <MediaPicker
-        isOpen={showMediaPicker}
-        onClose={() => {
-          setShowMediaPicker(false);
-          setCurrentImageBlock(null);
-        }}
-        onSelect={handleMediaSelect}
-        acceptedTypes={['image/*']}
-      />
     </Layout>
-  );
-};
-
-// Block Editor Component
-interface BlockEditorProps {
-  block: any;
-  index: number;
-  onUpdate: (data: any) => void;
-  onDelete: () => void;
-  onMove: (direction: 'up' | 'down') => void;
-  onOpenMediaPicker: (index: number) => void;
-  isFirst: boolean;
-  isLast: boolean;
-}
-
-const BlockEditor: React.FC<BlockEditorProps> = ({ block, index, onUpdate, onDelete, onMove, onOpenMediaPicker, isFirst, isLast }) => {
-  return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-gray-600 capitalize">{block.type}</span>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => onMove('up')}
-            disabled={isFirst}
-            className="text-gray-600 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Move up"
-          >
-            ↑
-          </button>
-          <button
-            onClick={() => onMove('down')}
-            disabled={isLast}
-            className="text-gray-600 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-            title="Move down"
-          >
-            ↓
-          </button>
-          <button
-            onClick={onDelete}
-            className="text-red-600 hover:text-red-700"
-            title="Delete"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {block.type === 'heading' && (
-        <div className="space-y-2">
-          <select
-            value={block.data.level || 2}
-            onChange={(e) => onUpdate({ level: parseInt(e.target.value) })}
-            className="input w-32"
-          >
-            <option value="1">H1</option>
-            <option value="2">H2</option>
-            <option value="3">H3</option>
-          </select>
-          <input
-            type="text"
-            value={block.data.text}
-            onChange={(e) => onUpdate({ text: e.target.value })}
-            className="input text-xl font-bold"
-            placeholder="Heading text"
-          />
-        </div>
-      )}
-
-      {block.type === 'text' && (
-        <textarea
-          value={block.data.text}
-          onChange={(e) => onUpdate({ text: e.target.value })}
-          className="input"
-          rows={3}
-          placeholder="Paragraph text"
-        />
-      )}
-
-      {block.type === 'richText' && (
-        <textarea
-          value={block.data.html}
-          onChange={(e) => onUpdate({ html: e.target.value })}
-          className="input font-mono text-sm"
-          rows={4}
-          placeholder="<p>Rich HTML content</p>"
-        />
-      )}
-
-      {block.type === 'button' && (
-        <div className="space-y-2">
-          <input
-            type="text"
-            value={block.data.text}
-            onChange={(e) => onUpdate({ text: e.target.value })}
-            className="input"
-            placeholder="Button text"
-          />
-          <input
-            type="url"
-            value={block.data.url}
-            onChange={(e) => onUpdate({ url: e.target.value })}
-            className="input"
-            placeholder="Button URL"
-          />
-          <div className="flex space-x-2">
-            <div className="flex-1">
-              <label className="block text-xs mb-1">Background Color</label>
-              <input
-                type="color"
-                value={block.data.backgroundColor || '#4F46E5'}
-                onChange={(e) => onUpdate({ backgroundColor: e.target.value })}
-                className="w-full h-10 rounded"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs mb-1">Text Color</label>
-              <input
-                type="color"
-                value={block.data.textColor || '#ffffff'}
-                onChange={(e) => onUpdate({ textColor: e.target.value })}
-                className="w-full h-10 rounded"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {block.type === 'image' && (
-        <div className="space-y-3">
-          {block.data.url ? (
-            <div className="relative group">
-              <img 
-                src={getImageUrl(block.data.url)} 
-                alt={block.data.alt || 'Preview'} 
-                className="max-w-full h-auto rounded-lg border-2 border-gray-200 shadow-sm"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = 'https://via.placeholder.com/600x300?text=Image+Not+Found';
-                }}
-              />
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all rounded-lg flex items-center justify-center">
-                <button
-                  onClick={() => onOpenMediaPicker(index)}
-                  className="opacity-0 group-hover:opacity-100 transition-all bg-white hover:bg-gray-100 text-gray-900 px-6 py-3 rounded-lg shadow-lg font-medium flex items-center gap-2"
-                >
-                  <ImageIcon className="w-5 h-5" />
-                  Change Image
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-2 truncate" title={getImageUrl(block.data.url)}>
-                📁 {getImageUrl(block.data.url)}
-              </p>
-            </div>
-          ) : (
-            <button
-              onClick={() => onOpenMediaPicker(index)}
-              className="w-full py-12 border-2 border-dashed border-gray-300 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 transition-all group"
-            >
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center group-hover:bg-indigo-200 transition-all">
-                  <ImageIcon className="w-8 h-8 text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-gray-900 font-medium">Select Image from Media Library</p>
-                  <p className="text-sm text-gray-500 mt-1">Click to browse your uploaded images</p>
-                </div>
-              </div>
-            </button>
-          )}
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Alt Text (for accessibility)
-            </label>
-            <input
-              type="text"
-              value={block.data.alt || ''}
-              onChange={(e) => onUpdate({ alt: e.target.value })}
-              className="input"
-              placeholder="Describe this image for screen readers"
-            />
-          </div>
-        </div>
-      )}
-
-      {block.type === 'divider' && (
-        <div className="border-t-2 border-gray-300 my-4"></div>
-      )}
-
-      {block.type === 'spacer' && (
-        <div>
-          <label className="block text-sm mb-2">Height (px)</label>
-          <input
-            type="number"
-            value={block.data.height || 20}
-            onChange={(e) => onUpdate({ height: parseInt(e.target.value) })}
-            className="input w-32"
-            min="10"
-            max="200"
-          />
-        </div>
-      )}
-
-      {(block.type === 'file' || block.type === 'pdf') && (
-        <div className="space-y-2">
-          <input
-            type="text"
-            value={block.data.name}
-            onChange={(e) => onUpdate({ name: e.target.value })}
-            className="input"
-            placeholder="File name"
-          />
-          <input
-            type="url"
-            value={block.data.url}
-            onChange={(e) => onUpdate({ url: e.target.value })}
-            className="input"
-            placeholder="File URL"
-          />
-        </div>
-      )}
-
-      {block.type === 'customHtml' && (
-        <div>
-          <label className="block text-sm mb-2">Custom HTML</label>
-          <textarea
-            value={block.data.html}
-            onChange={(e) => onUpdate({ html: e.target.value })}
-            className="input font-mono text-sm"
-            rows={6}
-            placeholder="<div>Your custom HTML here</div>"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            ⚠️ Use with caution. Invalid HTML may break email rendering.
-          </p>
-        </div>
-      )}
-    </div>
   );
 };

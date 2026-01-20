@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { ArrowLeft as ArrowLeftIcon } from 'lucide-react';
+import { EmailBuilder, getDefaultTemplate, resetDocument, useDocument, exportHtmlFromDocument } from '@/components/EmailBuilder';
 import api from '../lib/api';
 import toast from 'react-hot-toast';
 
@@ -9,15 +10,14 @@ export default function TemplateEditorPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
+  const document = useDocument();
 
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    htmlContent: '',
     thumbnail: '',
   });
   const [loading, setLoading] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState('');
 
   useEffect(() => {
     if (isEdit && id) {
@@ -31,10 +31,20 @@ export default function TemplateEditorPage() {
       setFormData({
         name: response.data.name,
         description: response.data.description || '',
-        htmlContent: response.data.htmlContent,
         thumbnail: response.data.thumbnail || '',
       });
-      setPreviewHtml(response.data.htmlContent);
+      
+      // Try to parse design from stored data
+      try {
+        if (response.data.design) {
+          const design = typeof response.data.design === 'string' 
+            ? JSON.parse(response.data.design) 
+            : response.data.design;
+          resetDocument(design);
+        }
+      } catch (e) {
+        console.log('No design JSON found, starting with default template');
+      }
     } catch (error) {
       toast.error('Failed to load template');
       navigate('/templates');
@@ -44,10 +54,6 @@ export default function TemplateEditorPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    
-    if (name === 'htmlContent') {
-      setPreviewHtml(value);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,11 +61,20 @@ export default function TemplateEditorPage() {
     setLoading(true);
 
     try {
+      // Export HTML from the current document
+      const html = exportHtmlFromDocument(document, { rootBlockId: 'root' });
+      
+      const dataToSave = {
+        ...formData,
+        htmlContent: html,
+        design: JSON.stringify(document),
+      };
+
       if (isEdit && id) {
-        await api.patch(`/templates/${id}`, formData);
+        await api.patch(`/templates/${id}`, dataToSave);
         toast.success('Template updated successfully');
       } else {
-        await api.post('/templates', formData);
+        await api.post('/templates', dataToSave);
         toast.success('Template created successfully');
       }
       navigate('/templates');
@@ -70,70 +85,14 @@ export default function TemplateEditorPage() {
     }
   };
 
-  const insertPlaceholder = (placeholder: string) => {
-    const textarea = document.getElementById('htmlContent') as HTMLTextAreaElement;
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const text = formData.htmlContent;
-      const before = text.substring(0, start);
-      const after = text.substring(end);
-      const newText = before + placeholder + after;
-      
-      setFormData((prev) => ({ ...prev, htmlContent: newText }));
-      setPreviewHtml(newText);
-      
-      // Set cursor position after the inserted text
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
-      }, 0);
-    }
+  const loadStarterTemplate = () => {
+    const starterTemplate = getDefaultTemplate();
+    resetDocument(starterTemplate);
+    toast.success('Starter template loaded with placeholders');
   };
 
-  const loadSampleTemplate = () => {
-    const sample = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Email Template</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
-  <table role="presentation" style="width: 100%; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 40px 0;">
-        <table role="presentation" style="width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-          <!-- Header -->
-          <tr>
-            <td style="padding: 40px 40px 30px; text-align: center; background-color: #4F46E5; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px;">{{HEADER_TITLE}}</h1>
-            </td>
-          </tr>
-          
-          <!-- Content -->
-          <tr>
-            <td style="padding: 40px;">
-              {{CONTENT}}
-            </td>
-          </tr>
-          
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 30px 40px; background-color: #f9fafb; border-radius: 0 0 8px 8px; text-align: center;">
-              <p style="margin: 0 0 10px; font-size: 12px; color: #6b7280;">{{COMPANY_INFO}}</p>
-              <p style="margin: 0; font-size: 12px; color: #6b7280;">{{UNSUBSCRIBE_LINK}}</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-    
-    setFormData((prev) => ({ ...prev, htmlContent: sample }));
-    setPreviewHtml(sample);
+  const handleExport = (html: string, design: any) => {
+    console.log('Template exported', { html, design });
   };
 
   return (
@@ -150,139 +109,74 @@ export default function TemplateEditorPage() {
           {isEdit ? 'Edit Template' : 'Create Template'}
         </h1>
         <p className="mt-2 text-gray-600">
-          Design your email template with HTML and use placeholders for dynamic content
+          Design your email template using the visual builder with placeholder blocks.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Editor Panel */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Template Name *
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="e.g., Newsletter Template"
-              />
+      <div className="px-8 pb-8">
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Template Settings</h2>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Template Name *</label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="e.g., Newsletter Template"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <input
+                  type="text"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="Brief description"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thumbnail URL</label>
+                <input
+                  type="text"
+                  name="thumbnail"
+                  value={formData.thumbnail}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="https://example.com/thumb.png"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description
-              </label>
-              <input
-                type="text"
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="Brief description of this template"
-              />
-            </div>
+            <div className="border-t pt-4 mt-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h3 className="text-sm font-semibold text-blue-900 mb-2">📝 Template Design Guide</h3>
+                <ul className="text-xs text-blue-800 space-y-1 ml-4 list-disc">
+                  <li>Use Preview tab to see your design, JSON Editor to modify structure, HTML Output to see generated code</li>
+                  <li>The starter template includes <strong>placeholder blocks</strong>:</li>
+                  <li className="ml-4"><code className="bg-blue-100 px-1 rounded">{'{{HEADER}}'}</code> - Logo/banner section</li>
+                  <li className="ml-4"><code className="bg-blue-100 px-1 rounded">{'{{CONTENT}}'}</code> - Main email body</li>
+                  <li className="ml-4"><code className="bg-blue-100 px-1 rounded">{'{{FOOTER}}'}</code> - Footer content</li>
+                  <li className="ml-4"><code className="bg-blue-100 px-1 rounded">{'{{UNSUBSCRIBE_LINK}}'}</code> - Unsubscribe URL</li>
+                  <li>These placeholders will be replaced with actual content when used in campaigns</li>
+                </ul>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Thumbnail URL
-              </label>
-              <input
-                type="text"
-                name="thumbnail"
-                value={formData.thumbnail}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="https://example.com/thumbnail.png"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  HTML Content *
-                </label>
+              <div className="flex justify-between items-center mb-4">
                 <button
                   type="button"
-                  onClick={loadSampleTemplate}
-                  className="text-xs text-indigo-600 hover:text-indigo-700"
+                  onClick={loadStarterTemplate}
+                  className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
                 >
-                  Load Sample Template
+                  🔄 Reset to Starter Template
                 </button>
               </div>
-              <textarea
-                id="htmlContent"
-                name="htmlContent"
-                value={formData.htmlContent}
-                onChange={handleChange}
-                required
-                rows={20}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                placeholder="Enter your HTML template code here..."
-              />
-            </div>
-
-            {/* Placeholder Helpers */}
-            <div className="border-t pt-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Available Placeholders</h3>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{HEADER_TITLE}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}HEADER_TITLE{'}}'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{CONTENT}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}CONTENT{'}}'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{COMPANY_INFO}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}COMPANY_INFO{'}}'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{UNSUBSCRIBE_LINK}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}UNSUBSCRIBE_LINK{'}}'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{OFFER_TITLE}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}OFFER_TITLE{'}}'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{OFFER_SUBTITLE}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}OFFER_SUBTITLE{'}}'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertPlaceholder('{{ANNOUNCEMENT_TITLE}}')}
-                  className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  {'{{'}ANNOUNCEMENT_TITLE{'}}'}
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-gray-500">
-                Click to insert placeholders. These will be replaced with actual content when used in campaigns.
-              </p>
             </div>
 
             <div className="flex space-x-3 pt-4">
@@ -304,17 +198,8 @@ export default function TemplateEditorPage() {
           </form>
         </div>
 
-        {/* Preview Panel */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Live Preview</h2>
-          <div className="border-2 border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-            <iframe
-              srcDoc={previewHtml}
-              title="Template Preview"
-              className="w-full"
-              style={{ minHeight: '600px', height: 'calc(100vh - 300px)' }}
-            />
-          </div>
+        <div className="mb-6">
+          <EmailBuilder onExport={handleExport} />
         </div>
       </div>
     </Layout>
