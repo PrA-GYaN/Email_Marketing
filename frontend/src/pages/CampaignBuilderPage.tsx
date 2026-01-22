@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { TestTube } from 'lucide-react';
-import { RichTextEditor } from '@/components/RichTextEditor';
+import { EmailEditorWithStorage } from '@/components/EmailEditorWithStorage';
 
 export const CampaignBuilderPage: React.FC = () => {
   const { id } = useParams();
@@ -247,13 +247,14 @@ export const CampaignBuilderPage: React.FC = () => {
             <div className="card">
               <h2 className="text-xl font-bold mb-4">Email Content</h2>
               <p className="text-sm text-gray-600 mb-4">
-                Use the rich text editor to create your email. You can insert merge tags like {'{FirstName}'}, {'{LastName}'}, {'{Email}'}, and {'{{UNSUBSCRIBE_LINK}}'} for personalization.
+                Use the visual drag-and-drop editor to create your email. You can use merge tags like {'{FirstName}'}, {'{LastName}'}, {'{Email}'}, and {'{{UNSUBSCRIBE_LINK}}'} for personalization.
               </p>
               
-              <RichTextEditor
+              <EmailEditorWithStorage
                 value={formData.emailContent}
                 onChange={(content) => setFormData({ ...formData, emailContent: content })}
                 height={600}
+                storageKey="campaign-content"
               />
             </div>
           </div>

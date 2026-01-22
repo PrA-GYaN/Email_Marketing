@@ -98,7 +98,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
+      {/* <main className="flex-1 overflow-y-auto"> */}
+      <main className="flex-1">
         {children}
       </main>
     </div>
