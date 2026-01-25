@@ -515,6 +515,377 @@ export const GrapesJSEmailEditor: React.FC<GrapesJSEmailEditorProps> = ({
       },
     });
 
+    // PDF Content Block
+    blockManager.add('pdf-content', {
+      label: '<div style="text-align: center;"><div style="font-size: 24px; margin-bottom: 5px;">📄</div><div style="font-size: 11px;">PDF</div></div>',
+      category: 'Components',
+      content: {
+        type: 'pdf-content',
+        droppable: true,
+        editable: true,
+        style: {
+          padding: '20px',
+          'background-color': '#f9fafb',
+          border: '2px dashed #d1d5da',
+          'border-radius': '8px',
+          'text-align': 'center',
+        },
+        components: [
+          {
+            type: 'text',
+            content: '📄 Click settings to choose PDF display mode and upload',
+            style: {
+              color: '#6b7280',
+              'font-size': '14px',
+            },
+          },
+        ],
+      },
+    });
+
+    // Define PDF Content Component Type
+    grapesEditor.DomComponents.addType('pdf-content', {
+      model: {
+        defaults: {
+          tagName: 'div',
+          droppable: true,
+          editable: true,
+          attributes: {
+            'data-pdf-mode': 'parsed', // Default mode
+          },
+          traits: [
+            {
+              type: 'select',
+              label: 'Display Mode',
+              name: 'data-pdf-mode',
+              options: [
+                { id: 'parsed', name: 'Parsed (Editable HTML)' },
+                { id: 'direct', name: 'Direct (Original Layout)' },
+              ],
+            },
+            {
+              type: 'button',
+              label: 'Upload PDF',
+              name: 'upload-pdf',
+              text: 'Upload & Process PDF',
+              full: true,
+              command: (editor: Editor) => {
+                // Create hidden file input
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'application/pdf';
+                
+                input.onchange = async (e: any) => {
+                  const file = e.target?.files?.[0];
+                  if (!file) return;
+
+                  // Get the selected component and its mode
+                  const selected = editor.getSelected();
+                  if (!selected) return;
+
+                  const mode = selected.getAttributes()['data-pdf-mode'] || 'parsed';
+
+                  // Show loading toast
+                  const loadingToast = toast.loading(
+                    mode === 'direct' 
+                      ? 'Converting PDF to images...' 
+                      : 'Extracting PDF content...'
+                  );
+
+                  try {
+                    // Upload PDF to media storage
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const uploadResponse = await api.post('/media/upload', formData, {
+                      headers: {
+                        'Content-Type': 'multipart/form-data',
+                      },
+                    });
+
+                    const fileId = uploadResponse.data.id;
+
+                    // Extract or convert PDF based on mode
+                    const extractResponse = await api.get(`/media/pdf/extract/${fileId}?mode=${mode}`);
+                    
+                    if (mode === 'direct') {
+                      // Direct mode: convert PDF pages to images
+                      const { pages, metadata } = extractResponse.data;
+                      
+                      // Create HTML with stacked images
+                      let html = '<div class="pdf-direct-content" style="font-family: Arial, sans-serif; background: #f9fafb; padding: 20px; border-radius: 8px;">\n';
+                      
+                      if (metadata.title) {
+                        html += `  <h2 style="color: #2c3e50; margin-bottom: 10px; font-size: 24px; text-align: center;">${metadata.title}</h2>\n`;
+                      }
+                      
+                      html += '  <div class="pdf-pages" style="display: flex; flex-direction: column; gap: 20px; align-items: center;">\n';
+                      
+                      for (const page of pages) {
+                        html += `    <div class="pdf-page" style="background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden; max-width: 100%;">\n`;
+                        html += `      <img src="${page.imageData}" alt="PDF Page ${page.pageNumber}" style="display: block; width: 100%; height: auto; max-width: 800px;" />\n`;
+                        html += `    </div>\n`;
+                      }
+                      
+                      html += '  </div>\n';
+                      html += `  <p style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px;">${metadata.pages} page(s)</p>\n`;
+                      html += '</div>';
+
+                      selected.components(html);
+                      selected.setStyle({
+                        padding: '0',
+                        'background-color': 'transparent',
+                        border: 'none',
+                      });
+
+                      selected.addAttributes({
+                        'data-pdf-file-id': fileId,
+                        'data-pdf-mode': 'direct',
+                        'data-pdf-pages': metadata.pages || 0,
+                      });
+
+                      toast.success(`PDF converted! (${metadata.pages} pages as images)`, {
+                        id: loadingToast,
+                      });
+                    } else {
+                      // Parsed mode: extract to HTML (original behavior)
+                      const { html, metadata } = extractResponse.data;
+
+                      selected.components(html);
+                      
+                      selected.setStyle({
+                        padding: '20px',
+                        'background-color': '#ffffff',
+                        border: '1px solid #e5e7eb',
+                        'border-radius': '8px',
+                        'font-family': 'Arial, sans-serif',
+                        'line-height': '1.6',
+                      });
+
+                      selected.addAttributes({
+                        'data-pdf-file-id': fileId,
+                        'data-pdf-mode': 'parsed',
+                        'data-pdf-title': metadata.title || 'PDF Content',
+                        'data-pdf-pages': metadata.pages || 0,
+                      });
+
+                      toast.success(`PDF extracted successfully! (${metadata.pages} pages)`, {
+                        id: loadingToast,
+                      });
+                    }
+                  } catch (error: any) {
+                    toast.error(
+                      error.response?.data?.message || 'Failed to process PDF',
+                      { id: loadingToast }
+                    );
+                  }
+                };
+
+                input.click();
+              },
+            },
+            {
+              type: 'button',
+              label: 'Select Existing PDF',
+              name: 'select-pdf',
+              text: 'Select from Library',
+              full: true,
+              command: async (editor: Editor) => {
+                const loadingToast = toast.loading('Loading PDF library...');
+
+                try {
+                  // Fetch all PDF files from media library
+                  const response = await api.get('/media/files');
+                  const pdfFiles = response.data.filter(
+                    (file: any) => file.mimeType === 'application/pdf'
+                  );
+
+                  toast.dismiss(loadingToast);
+
+                  if (pdfFiles.length === 0) {
+                    toast.error('No PDF files found in library');
+                    return;
+                  }
+
+                  // Create a modal to select PDF
+                  const modal = document.createElement('div');
+                  modal.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: rgba(0, 0, 0, 0.5);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 10000;
+                  `;
+
+                  const modalContent = document.createElement('div');
+                  modalContent.style.cssText = `
+                    background: white;
+                    border-radius: 12px;
+                    padding: 24px;
+                    max-width: 600px;
+                    max-height: 80vh;
+                    overflow-y: auto;
+                    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+                  `;
+
+                  let html = '<h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600;">Select PDF from Library</h2>';
+                  html += '<div style="display: grid; gap: 12px;">';
+
+                  for (const file of pdfFiles) {
+                    const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+                    html += `
+                      <div class="pdf-item" data-file-id="${file.id}" style="
+                        padding: 16px;
+                        border: 2px solid #e5e7eb;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: all 0.15s;
+                      ">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                          <div style="font-size: 32px;">📄</div>
+                          <div style="flex: 1;">
+                            <div style="font-weight: 600; margin-bottom: 4px;">${file.name}</div>
+                            <div style="font-size: 13px; color: #6b7280;">${sizeInMB} MB</div>
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  }
+
+                  html += '</div>';
+                  html += '<button id="close-modal" style="margin-top: 16px; padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer; width: 100%;">Cancel</button>';
+
+                  modalContent.innerHTML = html;
+                  modal.appendChild(modalContent);
+                  document.body.appendChild(modal);
+
+                  // Handle PDF selection
+                  const pdfItems = modalContent.querySelectorAll('.pdf-item');
+                  pdfItems.forEach((item) => {
+                    item.addEventListener('mouseenter', () => {
+                      (item as HTMLElement).style.borderColor = '#3b82f6';
+                      (item as HTMLElement).style.background = '#eff6ff';
+                    });
+                    item.addEventListener('mouseleave', () => {
+                      (item as HTMLElement).style.borderColor = '#e5e7eb';
+                      (item as HTMLElement).style.background = 'transparent';
+                    });
+                    item.addEventListener('click', async () => {
+                      const fileId = (item as HTMLElement).dataset.fileId;
+                      document.body.removeChild(modal);
+
+                      const selected = editor.getSelected();
+                      if (!selected) return;
+
+                      const mode = selected.getAttributes()['data-pdf-mode'] || 'parsed';
+
+                      const extractToast = toast.loading(
+                        mode === 'direct' 
+                          ? 'Converting PDF to images...' 
+                          : 'Extracting PDF content...'
+                      );
+
+                      try {
+                        const extractResponse = await api.get(`/media/pdf/extract/${fileId}?mode=${mode}`);
+                        
+                        if (mode === 'direct') {
+                          // Direct mode: convert PDF pages to images
+                          const { pages, metadata } = extractResponse.data;
+                          
+                          // Create HTML with stacked images
+                          let pdfHtml = '<div class="pdf-direct-content" style="font-family: Arial, sans-serif; background: #f9fafb; padding: 20px; border-radius: 8px;">\n';
+                          
+                          if (metadata.title) {
+                            pdfHtml += `  <h2 style="color: #2c3e50; margin-bottom: 10px; font-size: 24px; text-align: center;">${metadata.title}</h2>\n`;
+                          }
+                          
+                          pdfHtml += '  <div class="pdf-pages" style="display: flex; flex-direction: column; gap: 20px; align-items: center;">\n';
+                          
+                          for (const page of pages) {
+                            pdfHtml += `    <div class="pdf-page" style="background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden; max-width: 100%;">\n`;
+                            pdfHtml += `      <img src="${page.imageData}" alt="PDF Page ${page.pageNumber}" style="display: block; width: 100%; height: auto; max-width: 800px;" />\n`;
+                            pdfHtml += `    </div>\n`;
+                          }
+                          
+                          pdfHtml += '  </div>\n';
+                          pdfHtml += `  <p style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px;">${metadata.pages} page(s)</p>\n`;
+                          pdfHtml += '</div>';
+
+                          selected.components(pdfHtml);
+                          selected.setStyle({
+                            padding: '0',
+                            'background-color': 'transparent',
+                            border: 'none',
+                          });
+
+                          selected.addAttributes({
+                            'data-pdf-file-id': fileId,
+                            'data-pdf-mode': 'direct',
+                            'data-pdf-pages': metadata.pages || 0,
+                          });
+
+                          toast.success(`PDF converted! (${metadata.pages} pages as images)`, {
+                            id: extractToast,
+                          });
+                        } else {
+                          // Parsed mode: extract to HTML
+                          const { html: pdfHtml, metadata } = extractResponse.data;
+
+                          selected.components(pdfHtml);
+                          selected.setStyle({
+                            padding: '20px',
+                            'background-color': '#ffffff',
+                            border: '1px solid #e5e7eb',
+                            'border-radius': '8px',
+                            'font-family': 'Arial, sans-serif',
+                            'line-height': '1.6',
+                          });
+
+                          selected.addAttributes({
+                            'data-pdf-file-id': fileId,
+                            'data-pdf-mode': 'parsed',
+                            'data-pdf-title': metadata.title || 'PDF Content',
+                            'data-pdf-pages': metadata.pages || 0,
+                          });
+
+                          toast.success(`PDF extracted! (${metadata.pages} pages)`, {
+                            id: extractToast,
+                          });
+                        }
+                      } catch (error: any) {
+                        toast.error(
+                          error.response?.data?.message || 'Failed to process PDF',
+                          { id: extractToast }
+                        );
+                      }
+                    });
+                  });
+
+                  // Close modal
+                  const closeBtn = modalContent.querySelector('#close-modal');
+                  closeBtn?.addEventListener('click', () => {
+                    document.body.removeChild(modal);
+                  });
+                  modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                      document.body.removeChild(modal);
+                    }
+                  });
+                } catch (error: any) {
+                  toast.error('Failed to load PDF library', { id: loadingToast });
+                }
+              },
+            },
+          ],
+        },
+      },
+    });
+
     // Listen to changes
     grapesEditor.on('update', () => {
       if (isReady) {

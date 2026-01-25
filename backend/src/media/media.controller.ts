@@ -16,12 +16,16 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { MediaService } from './media.service';
+import { PDFExtractorService } from './pdf-extractor.service';
 import { CreateFolderDto, UpdateFolderDto, UpdateMediaDto, MoveMediaDto } from './dto/media.dto';
 
 @Controller('media')
 @UseGuards(JwtAuthGuard)
 export class MediaController {
-  constructor(private readonly mediaService: MediaService) {}
+  constructor(
+    private readonly mediaService: MediaService,
+    private readonly pdfExtractorService: PDFExtractorService,
+  ) {}
 
   // Folder endpoints
   @Post('folders')
@@ -165,6 +169,52 @@ export class MediaController {
   @Delete('files/:id')
   async deleteFile(@Request() req, @Param('id') id: string) {
     return this.mediaService.deleteFile(req.user.userId, id);
+  }
+
+  @Post('pdf/extract')
+  @UseInterceptors(FileInterceptor('file'))
+  async extractPDF(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('mode') mode?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file provided');
+    }
+
+    if (file.mimetype !== 'application/pdf') {
+      throw new BadRequestException('File must be a PDF');
+    }
+
+    // Support two modes: 'parsed' (default) or 'direct'
+    if (mode === 'direct') {
+      return this.pdfExtractorService.convertPDFToImages(file.buffer);
+    } else {
+      return this.pdfExtractorService.extractPDF(file.buffer);
+    }
+  }
+
+  @Get('pdf/extract/:fileId')
+  async extractPDFById(
+    @Request() req,
+    @Param('fileId') fileId: string,
+    @Query('mode') mode?: string,
+  ) {
+    const file = await this.mediaService.getFile(req.user.userId, fileId);
+    
+    if (file.mimeType !== 'application/pdf') {
+      throw new BadRequestException('File is not a PDF');
+    }
+
+    const filePath = await this.mediaService.getFilePath(file.filename);
+    const fs = require('fs').promises;
+    const buffer = await fs.readFile(filePath);
+
+    // Support two modes: 'parsed' (default) or 'direct'
+    if (mode === 'direct') {
+      return this.pdfExtractorService.convertPDFToImages(buffer);
+    } else {
+      return this.pdfExtractorService.extractPDF(buffer);
+    }
   }
 
   @Get('storage/usage')

@@ -306,4 +306,11 @@ export class MediaService {
       totalSizeMB: ((result._sum.size || 0) / (1024 * 1024)).toFixed(2),
     };
   }
+
+  /**
+   * Get the full file path for a filename
+   */
+  async getFilePath(filename: string): Promise<string> {
+    return path.join(this.uploadDir, filename);
+  }
 }
